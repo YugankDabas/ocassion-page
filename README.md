@@ -164,16 +164,17 @@ Create the AWS resources manually in `ap-south-1`:
 | `BACKEND_SECRET_NAME` | The exact name or ARN of the Secrets Manager JSON secret you create, e.g. `occasion-admin/production` |
 | `NODE_IMAGE` | `653380732738.dkr.ecr.ap-south-1.amazonaws.com/node-24.18.0-alpine3.24-arm:node-24.18.0-alpine3.24-arm-patch-20260915` |
 | `VITE_API_BASE_URL` | `https://api-occasion-admin.gyftr.net` |
-| `DEPLOY_SERVICES` | `false` only for the initial bootstrap when ECS services do not exist; set `true` for normal deployments (default). |
+| `DEPLOY_SERVICES` | `true` after both ECS services exist. If unset or `false`, the pipeline only builds/pushes images and registers task definitions (default: `false`). |
 
 The AWS account ID in the ECR URIs is the account where you create the two repositories. `CODEBUILD_RESOLVED_SOURCE_VERSION`
 and `CODEBUILD_BUILD_NUMBER` are automatically provided by CodeBuild; do not add them yourself. Do not put
 database passwords or JWT secrets in CodeBuild variables; the backend retrieves those from Secrets Manager.
 
-For the **first run only**, set `DEPLOY_SERVICES=false`. The build pushes both images and registers both task
+For the **first run**, leave `DEPLOY_SERVICES` unset or set it to `false`. The build pushes both images and registers both task
 definitions without trying to update services that do not exist yet. Create both ECS services from the
 registered task-definition revisions (configure their networking/load balancers), then set
-`DEPLOY_SERVICES=true` or remove that variable before later pipeline runs.
+`DEPLOY_SERVICES=true` for later pipeline runs. If the CodeBuild project already has `DEPLOY_SERVICES=true`,
+change or remove that project-level override for the bootstrap build.
 
 The CodeBuild service role is selected in the CodeBuild project settings; it is not a task role ARN
 environment variable. It needs ECR push permissions on both application repositories, pull access to the
