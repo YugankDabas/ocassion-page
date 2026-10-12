@@ -84,7 +84,7 @@ export class ApiClient {
 
     let res: Response;
     try {
-      res = await fetch(`${this.baseUrl}${path}`, { method, headers, body: payload, credentials: 'same-origin' });
+      res = await fetch(`${this.baseUrl}${path}`, { method, headers, body: payload, credentials: 'include' });
     } catch {
       throw new ApiError(0, 'NETWORK', 'Cannot reach the server. Check your connection and try again.');
     }
@@ -110,8 +110,8 @@ function toQueryString(query?: Query): string {
   return s ? `?${s}` : '';
 }
 
-/** The admin API is always on the panel's own origin. Also used for plain links (downloads). */
-export const API_BASE = '/api/v1';
+/** Defaults to the same-origin dev proxy; production can point at the separate API host. */
+export const API_BASE = `${import.meta.env.VITE_API_BASE_URL || ''}/api/v1`;
 export const api = new ApiClient(API_BASE);
 
 export function errorMessage(err: unknown): string {

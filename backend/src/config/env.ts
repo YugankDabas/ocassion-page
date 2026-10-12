@@ -10,6 +10,7 @@ const secret = (name: string) =>
 const settings = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
+  ADMIN_FRONTEND_ORIGIN: z.string().url().default('http://localhost:5173'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   /** Number of reverse-proxy hops in front of the API (for correct client IPs / rate limiting). */
   TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(1),

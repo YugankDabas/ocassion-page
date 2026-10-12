@@ -77,6 +77,24 @@ describe('Secrets Manager secret', () => {
 });
 
 describe('storage settings', () => {
+  it('uses the configured frontend origin for API requests', () => {
+    const env = loadEnv({
+      ...base,
+      DATABASE_URL: 'postgresql://localhost/occasion_admin',
+      PUBLIC_UPLOADS_BASE_URL: 'http://localhost:4000/uploads',
+      ADMIN_FRONTEND_ORIGIN: 'https://occasion-admin.gyftr.net',
+    });
+    expect(env.ADMIN_FRONTEND_ORIGIN).toBe('https://occasion-admin.gyftr.net');
+    expect(() =>
+      loadEnv({
+        ...base,
+        DATABASE_URL: 'postgresql://localhost/occasion_admin',
+        PUBLIC_UPLOADS_BASE_URL: 'http://localhost:4000/uploads',
+        ADMIN_FRONTEND_ORIGIN: 'occasion-admin.gyftr.net',
+      }),
+    ).toThrow('ADMIN_FRONTEND_ORIGIN');
+  });
+
   it('needs only the bucket name; the region defaults to ap-south-1', () => {
     const env = loadEnv({ ...base, NODE_ENV: 'production', DATABASE_URL: 'postgresql://u:p@h:5432/d', S3_BUCKET: 'gyftr-occasion-media' });
     expect(env).toMatchObject({ S3_BUCKET: 'gyftr-occasion-media', AWS_REGION: 'ap-south-1', S3_PREFIX: 'occasion-pages' });

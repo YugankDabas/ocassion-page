@@ -1,0 +1,30 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - set -euo pipefail
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com"
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin 653380732738.dkr.ecr.ap-south-1.amazonaws.com
+  build:
+    commands:
+      - IMAGE_TAG="${CODEBUILD_RESOLVED_SOURCE_VERSION:0:12}-${CODEBUILD_BUILD_NUMBER}"
+      - docker build --platform linux/arm64 -f backend/Dockerfile --build-arg NODE_IMAGE="$NODE_IMAGE" -t "$BACKEND_ECR_URI:$IMAGE_TAG" .
+      - docker build --platform linux/arm64 -f frontend/Dockerfile --build-arg NODE_IMAGE="$NODE_IMAGE" --build-arg VITE_API_BASE_URL="$VITE_API_BASE_URL" -t "$FRONTEND_ECR_URI:$IMAGE_TAG" .
+      - docker push "$BACKEND_ECR_URI:$IMAGE_TAG"
+      - docker push "$FRONTEND_ECR_URI:$IMAGE_TAG"
+  post_build:
+    commands:
+      - IMAGE_TAG="${CODEBUILD_RESOLVED_SOURCE_VERSION:0:12}-${CODEBUILD_BUILD_NUMBER}"
+      - jq --arg image "$BACKEND_ECR_URI:$IMAGE_TAG" --arg executionRole "$TASK_EXECUTION_ROLE_ARN" --arg taskRole "$BACKEND_TASK_ROLE_ARN" --arg secret "$BACKEND_SECRET_NAME" --arg containerName "$BACKEND_CONTAINER_NAME" '.executionRoleArn=$executionRole | .taskRoleArn=$taskRole | .containerDefinitions |= map(if .name == $containerName then .image=$image | .environment += [{"name":"AWS_SECRET_NAME","value":$secret}] else . end)' taskdef-backend.json > taskdef-backend-rendered.json
+      - jq --arg image "$FRONTEND_ECR_URI:$IMAGE_TAG" --arg executionRole "$TASK_EXECUTION_ROLE_ARN" --arg containerName "$FRONTEND_CONTAINER_NAME" '.executionRoleArn=$executionRole | .containerDefinitions |= map(if .name == $containerName then .image=$image else . end)' taskdef-frontend.json > taskdef-frontend-rendered.json
+      - BACKEND_TASK_DEFINITION_ARN="$(aws ecs register-task-definition --cli-input-json file://taskdef-backend-rendered.json --query 'taskDefinition.taskDefinitionArn' --output text)"
+      - FRONTEND_TASK_DEFINITION_ARN="$(aws ecs register-task-definition --cli-input-json file://taskdef-frontend-rendered.json --query 'taskDefinition.taskDefinitionArn' --output text)"
+      - aws ecs update-service --cluster "$ECS_CLUSTER_NAME" --service "$BACKEND_ECS_SERVICE" --task-definition "$BACKEND_TASK_DEFINITION_ARN"
+      - aws ecs update-service --cluster "$ECS_CLUSTER_NAME" --service "$FRONTEND_ECS_SERVICE" --task-definition "$FRONTEND_TASK_DEFINITION_ARN"
+      - aws ecs wait services-stable --cluster "$ECS_CLUSTER_NAME" --services "$BACKEND_ECS_SERVICE" "$FRONTEND_ECS_SERVICE"
+      - printf '{"imageTag":"%s","backendTaskDefinition":"%s","frontendTaskDefinition":"%s"}\n' "$IMAGE_TAG" "$BACKEND_TASK_DEFINITION_ARN" "$FRONTEND_TASK_DEFINITION_ARN" > build-metadata.json
+
+artifacts:
+  files:
+    - build-metadata.json

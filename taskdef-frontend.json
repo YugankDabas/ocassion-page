@@ -1,0 +1,40 @@
+{
+  "family": "occasion-admin-frontend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["MANAGED_INSTANCES"],
+  "cpu": "256",
+  "memory": "512",
+  "runtimePlatform": {
+    "operatingSystemFamily": "LINUX",
+    "cpuArchitecture": "ARM64"
+  },
+  "containerDefinitions": [
+    {
+      "name": "Occasion-Admin-Frontend-Container",
+      "image": "REPLACED_BY_PIPELINE",
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 4546, "hostPort": 4546, "protocol": "tcp" }
+      ],
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:4546/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 10
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/Occasion-Admin-Frontend-TD",
+          "awslogs-create-group": "true",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

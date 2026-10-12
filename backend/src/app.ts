@@ -17,6 +17,23 @@ export function createApp(c: Container): Express {
   app.disable('x-powered-by');
   app.set('trust proxy', env.TRUST_PROXY);
   app.set('etag', false);
+  app.use((req, res, next) => {
+    if (req.path !== '/api/v1' && !req.path.startsWith('/api/v1/')) return next();
+    const origin = req.get('origin');
+    if (!origin) return next();
+    if (origin !== env.ADMIN_FRONTEND_ORIGIN) {
+      return res.status(403).json({ error: { code: 'ORIGIN_NOT_ALLOWED', message: 'This origin is not allowed.' } });
+    }
+    res.set({
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Allow-Headers': 'Content-Type, X-CSRF-Token',
+      'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS',
+      Vary: 'Origin',
+    });
+    if (req.method === 'OPTIONS') return res.status(204).end();
+    next();
+  });
 
   app.use(
     pinoHttp({
