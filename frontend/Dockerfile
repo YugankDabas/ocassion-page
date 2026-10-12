@@ -5,7 +5,7 @@ FROM ${NODE_IMAGE} AS build
 ARG VITE_API_BASE_URL
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+RUN npm ci --include=dev
 COPY frontend/ ./
 COPY backend/src/contracts/ /app/backend/src/contracts/
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
