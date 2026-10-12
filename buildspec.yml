@@ -5,10 +5,14 @@ phases:
     on-failure: ABORT
     commands:
       - set -euo pipefail
-      - aws ecs describe-services --cluster "$ECS_CLUSTER_NAME" --services "$BACKEND_ECS_SERVICE" "$FRONTEND_ECS_SERVICE" --output json > ecs-services.json
       - |
-        jq -r '.failures[]? | "ECS lookup failed: \(.reason) \(.detail // "")"' ecs-services.json
-      - jq -e --arg backend "$BACKEND_ECS_SERVICE" --arg frontend "$FRONTEND_ECS_SERVICE" '[.services[].serviceName] | index($backend) != null and index($frontend) != null' ecs-services.json
+        if [ "${DEPLOY_SERVICES:-true}" = "true" ]; then
+          aws ecs describe-services --cluster "$ECS_CLUSTER_NAME" --services "$BACKEND_ECS_SERVICE" "$FRONTEND_ECS_SERVICE" --output json > ecs-services.json
+          jq -r '.failures[]? | "ECS lookup failed: \(.reason) \(.detail // "")"' ecs-services.json
+          jq -e --arg backend "$BACKEND_ECS_SERVICE" --arg frontend "$FRONTEND_ECS_SERVICE" '[.services[].serviceName] | index($backend) != null and index($frontend) != null' ecs-services.json
+        else
+          echo "DEPLOY_SERVICES=false: skipping ECS service check for initial bootstrap."
+        fi
       - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com"
       - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin 653380732738.dkr.ecr.ap-south-1.amazonaws.com
   build:
@@ -26,9 +30,14 @@ phases:
       - jq --arg image "$FRONTEND_ECR_URI:$IMAGE_TAG" --arg executionRole "$TASK_EXECUTION_ROLE_ARN" --arg containerName "$FRONTEND_CONTAINER_NAME" '.executionRoleArn=$executionRole | .containerDefinitions |= map(if .name == $containerName then .image=$image else . end)' taskdef-frontend.json > taskdef-frontend-rendered.json
       - BACKEND_TASK_DEFINITION_ARN="$(aws ecs register-task-definition --cli-input-json file://taskdef-backend-rendered.json --query 'taskDefinition.taskDefinitionArn' --output text)"
       - FRONTEND_TASK_DEFINITION_ARN="$(aws ecs register-task-definition --cli-input-json file://taskdef-frontend-rendered.json --query 'taskDefinition.taskDefinitionArn' --output text)"
-      - aws ecs update-service --cluster "$ECS_CLUSTER_NAME" --service "$BACKEND_ECS_SERVICE" --task-definition "$BACKEND_TASK_DEFINITION_ARN"
-      - aws ecs update-service --cluster "$ECS_CLUSTER_NAME" --service "$FRONTEND_ECS_SERVICE" --task-definition "$FRONTEND_TASK_DEFINITION_ARN"
-      - aws ecs wait services-stable --cluster "$ECS_CLUSTER_NAME" --services "$BACKEND_ECS_SERVICE" "$FRONTEND_ECS_SERVICE"
+      - |
+        if [ "${DEPLOY_SERVICES:-true}" = "true" ]; then
+          aws ecs update-service --cluster "$ECS_CLUSTER_NAME" --service "$BACKEND_ECS_SERVICE" --task-definition "$BACKEND_TASK_DEFINITION_ARN"
+          aws ecs update-service --cluster "$ECS_CLUSTER_NAME" --service "$FRONTEND_ECS_SERVICE" --task-definition "$FRONTEND_TASK_DEFINITION_ARN"
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER_NAME" --services "$BACKEND_ECS_SERVICE" "$FRONTEND_ECS_SERVICE"
+        else
+          echo "Images and task definitions registered. Create both ECS services, then set DEPLOY_SERVICES=true."
+        fi
       - printf '{"imageTag":"%s","backendTaskDefinition":"%s","frontendTaskDefinition":"%s"}\n' "$IMAGE_TAG" "$BACKEND_TASK_DEFINITION_ARN" "$FRONTEND_TASK_DEFINITION_ARN" > build-metadata.json
 
 artifacts:
