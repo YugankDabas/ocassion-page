@@ -1,9 +1,11 @@
 {
-  "family": "occasion-admin-frontend",
+  "family": "Occasion-Admin-Frontend-TD",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["MANAGED_INSTANCES"],
   "cpu": "256",
   "memory": "512",
+  "taskRoleArn": "arn:aws:iam::653380732738:role/ecsTaskExecutionRole",
+  "executionRoleArn": "arn:aws:iam::653380732738:role/ecsTaskExecutionRole",
   "runtimePlatform": {
     "operatingSystemFamily": "LINUX",
     "cpuArchitecture": "ARM64"
@@ -11,7 +13,7 @@
   "containerDefinitions": [
     {
       "name": "Occasion-Admin-Frontend-Container",
-      "image": "REPLACED_BY_PIPELINE",
+      "image": "653380732738.dkr.ecr.ap-south-1.amazonaws.com/occasion-admin-frontend:b8c416a8aca5-14",
       "essential": true,
       "portMappings": [
         { "containerPort": 4546, "hostPort": 4546, "protocol": "tcp" }

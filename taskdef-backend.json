@@ -1,9 +1,11 @@
 {
-  "family": "occasion-admin-backend",
+  "family": "Occasion-Admin-Backend-TD",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["MANAGED_INSTANCES"],
   "cpu": "512",
   "memory": "1024",
+  "taskRoleArn": "arn:aws:iam::653380732738:role/ecsTaskExecutionRole",
+  "executionRoleArn": "arn:aws:iam::653380732738:role/ecsTaskExecutionRole",
   "runtimePlatform": {
     "operatingSystemFamily": "LINUX",
     "cpuArchitecture": "ARM64"
@@ -11,7 +13,7 @@
   "containerDefinitions": [
     {
       "name": "Occasion-Admin-Backend-Container",
-      "image": "REPLACED_BY_PIPELINE",
+      "image": "653380732738.dkr.ecr.ap-south-1.amazonaws.com/occasion-admin-backend:b8c416a8aca5-14",
       "essential": true,
       "portMappings": [
         { "containerPort": 4545, "hostPort": 4545, "protocol": "tcp" }
@@ -20,6 +22,7 @@
         { "name": "NODE_ENV", "value": "production" },
         { "name": "PORT", "value": "4545" },
         { "name": "AWS_REGION", "value": "ap-south-1" },
+        { "name": "AWS_SECRET_NAME", "value": "REPLACE_WITH_BACKEND_SECRET_NAME" },
         { "name": "RUN_MIGRATIONS_ON_START", "value": "true" },
         { "name": "ADMIN_FRONTEND_ORIGIN", "value": "https://occasion-admin.gyftr.net" },
         { "name": "TRUST_PROXY", "value": "1" }
