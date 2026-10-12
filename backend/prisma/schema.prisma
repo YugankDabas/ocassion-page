@@ -1,0 +1,224 @@
+// Occasion page builder — data model.
+// Page content (sections, theme, SEO) is stored as validated JSON documents so
+// new section types never need a migration. Everything relational (who, what,
+// when, which brand) lives in proper columns.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  PUBLISHER
+  EDITOR
+}
+
+enum PageStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum RevisionKind {
+  SAVE
+  PUBLISH
+  RESTORE
+}
+
+enum RedemptionMode {
+  ONLINE
+  OFFLINE
+  BOTH
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  name         String
+  passwordHash String
+  role         Role      @default(EDITOR)
+  isActive     Boolean   @default(true)
+  /// Bumped on password change / deactivation to revoke every issued session token.
+  tokenVersion Int       @default(0)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  pagesCreated   Page[]         @relation("PageCreatedBy")
+  pagesUpdated   Page[]         @relation("PageUpdatedBy")
+  pagesPublished Page[]         @relation("PagePublishedBy")
+  revisions      PageRevision[]
+  media          Media[]
+  templates      Template[]
+  auditLogs      AuditLog[]
+}
+
+model Occasion {
+  id         String   @id @default(uuid()) @db.Uuid
+  slug       String   @unique
+  name       String
+  /// Used inside generated template copy: "This {Diwali}, ..."
+  shortName  String
+  /// Who people usually gift for this occasion (template copy).
+  recipients String   @default("friends and family")
+  emoji      String   @default("🎁")
+  /// Default public page URL, e.g. https://www.gyftr.com/occasion/diwali-gift-cards
+  pageUrl    String
+  sortOrder  Int      @default(0)
+  isActive   Boolean  @default(true)
+  /// Default theme (colours, font, pattern) applied to new pages for this occasion.
+  theme      Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  pages     Page[]
+  templates Template[]
+}
+
+model Template {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String
+  description String    @default("")
+  occasionId  String?   @db.Uuid
+  occasion    Occasion? @relation(fields: [occasionId], references: [id], onDelete: SetNull)
+  content     Json
+  createdById String?   @db.Uuid
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([occasionId])
+}
+
+model Page {
+  id               String     @id @default(uuid()) @db.Uuid
+  slug             String     @unique
+  title            String
+  occasionId       String     @db.Uuid
+  occasion         Occasion   @relation(fields: [occasionId], references: [id], onDelete: Restrict)
+  status           PageStatus @default(DRAFT)
+  draft            Json
+  /// Incremented on every draft save; used for optimistic concurrency.
+  draftVersion     Int        @default(1)
+  published        Json?
+  publishedVersion Int?
+  /// Slug the published snapshot is served under (may lag behind a renamed draft).
+  publishedSlug    String?    @unique
+  publishedAt      DateTime?
+  publishedById    String?    @db.Uuid
+  publishedBy      User?      @relation("PagePublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+  createdById      String?    @db.Uuid
+  createdBy        User?      @relation("PageCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById      String?    @db.Uuid
+  updatedBy        User?      @relation("PageUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  revisions   PageRevision[]
+  publication PagePublication?
+
+  @@index([status])
+  @@index([occasionId])
+}
+
+model PageRevision {
+  id          String       @id @default(uuid()) @db.Uuid
+  pageId      String       @db.Uuid
+  page        Page         @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  version     Int
+  kind        RevisionKind
+  title       String
+  slug        String
+  content     Json
+  note        String       @default("")
+  createdById String?      @db.Uuid
+  createdBy   User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime     @default(now())
+
+  @@index([pageId, createdAt])
+}
+
+/// What gyftr.com serves for a published page: the rendered, embeddable HTML (styles + markup +
+/// script, no header / footer) and its SEO metadata. One row per published page; a row exists
+/// only while the page is published. The gyftr.com backend never reads this table directly: it
+/// reads the view integration.published_pages.
+model PagePublication {
+  /// URL slug the page is published under.
+  slug        String   @id
+  /// Which system produced the page. Always OCCASION_PAGE_BUILDER: it lets the gyftr.com backend
+  /// label these rows when it merges them with pages from its own sources.
+  source      String   @default("OCCASION_PAGE_BUILDER")
+  pageId      String   @unique @db.Uuid
+  page        Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  /// Page.draftVersion that was published.
+  version     Int
+  /// Ready to insert: <style> + markup + <script>.
+  html        String
+  /// Values for <head>: title, description, keywords, canonicalUrl, noIndex, ogImage, jsonLd.
+  seo         Json
+  publishedAt DateTime
+  /// Last time the HTML was re-rendered (publish, or a brand / site-settings change).
+  renderedAt  DateTime @default(now())
+}
+
+model Brand {
+  id              String         @id @default(uuid()) @db.Uuid
+  name            String
+  slug            String         @unique
+  logoUrl         String         @default("")
+  productUrl      String         @default("")
+  discountPercent Decimal?       @db.Decimal(5, 2)
+  discountLabel   String         @default("")
+  category        String         @default("")
+  redemption      RedemptionMode @default(BOTH)
+  minDenomination Int?
+  isActive        Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([name])
+  @@index([category])
+}
+
+model Media {
+  id           String   @id @default(uuid()) @db.Uuid
+  storageKey   String   @unique
+  url          String
+  mimeType     String
+  width        Int
+  height       Int
+  sizeBytes    Int
+  originalName String
+  alt          String   @default("")
+  uploadedById String?  @db.Uuid
+  uploadedBy   User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model SiteSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @db.Uuid
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}

@@ -1,0 +1,109 @@
+import { PrismaClient } from '@prisma/client';
+import type { Env } from './config/env';
+import { PageUrlPolicy } from './domain/pages/PageUrlPolicy';
+import { SectionRegistry } from './domain/sections/SectionRegistry';
+import { TemplateFactory } from './domain/templates/TemplateFactory';
+import {
+  AuthController,
+  BrandController,
+  CatalogController,
+  MediaController,
+  PageController,
+  UserController,
+} from './http/controllers';
+import { HtmlSanitizer } from './lib/HtmlSanitizer';
+import type { Logger } from './lib/logger';
+import { ImageInliner } from './render/ImageInliner';
+import { PageRenderer } from './render/PageRenderer';
+import { PrismaBrandRepository } from './repositories/prisma/PrismaBrandRepository';
+import { PrismaPageRepository } from './repositories/prisma/PrismaPageRepository';
+import { PrismaPublicationRepository } from './repositories/prisma/PrismaPublicationRepository';
+import {
+  PrismaAuditRepository,
+  PrismaMediaRepository,
+  PrismaOccasionRepository,
+  PrismaSettingsRepository,
+  PrismaTemplateRepository,
+  PrismaUserRepository,
+} from './repositories/prisma/PrismaRepositories';
+import { AuditService } from './services/AuditService';
+import { AuthService } from './services/AuthService';
+import { BrandService } from './services/BrandService';
+import { ContentChangeHub } from './services/ContentChanges';
+import { PagePayloadService } from './services/PagePayloadService';
+import { OccasionService, SiteSettingsService, TemplateService } from './services/CatalogServices';
+import { MediaService, SharpImageProcessor } from './services/MediaService';
+import { PageService } from './services/PageService';
+import { PublicationService } from './services/PublicationService';
+import { BcryptPasswordHasher, SessionTokenService } from './services/security';
+import { UserService } from './services/UserService';
+import { LocalDiskStorage, S3Storage, type IStorageProvider } from './storage/StorageProvider';
+
+/**
+ * Composition root: the only place that knows concrete implementations.
+ * Everything else receives its collaborators through constructors.
+ */
+export function createContainer(env: Env, logger: Logger, prisma = new PrismaClient()) {
+  const repos = {
+    users: new PrismaUserRepository(prisma),
+    occasions: new PrismaOccasionRepository(prisma),
+    templates: new PrismaTemplateRepository(prisma),
+    pages: new PrismaPageRepository(prisma),
+    publications: new PrismaPublicationRepository(prisma),
+    brands: new PrismaBrandRepository(prisma),
+    media: new PrismaMediaRepository(prisma),
+    settings: new PrismaSettingsRepository(prisma),
+    audit: new PrismaAuditRepository(prisma),
+  };
+
+  // Uploaded images: the S3 bucket when one is configured, local disk otherwise (development).
+  const storage: IStorageProvider = env.S3_BUCKET
+    ? new S3Storage({ bucket: env.S3_BUCKET, region: env.AWS_REGION, prefix: env.S3_PREFIX })
+    : new LocalDiskStorage(env.LOCAL_UPLOAD_DIR, env.PUBLIC_UPLOADS_BASE_URL!);
+
+  const html = new HtmlSanitizer();
+  const registry = SectionRegistry.createDefault(html);
+  const urls = new PageUrlPolicy(env.PAGE_PUBLIC_BASE_URL);
+  const changes = new ContentChangeHub(logger);
+  const hasher = new BcryptPasswordHasher();
+  const sessionTokens = new SessionTokenService(env.JWT_SECRET, env.SESSION_TTL_HOURS);
+  const audit = new AuditService(repos.audit, logger);
+  const site = new SiteSettingsService(repos.settings, changes, audit);
+
+  const pages = new PageService(repos.pages, repos.occasions, repos.templates, repos.brands, registry, new TemplateFactory(), audit, urls);
+  const payloads = new PagePayloadService(repos.occasions, repos.brands, site, registry);
+  // Downloads embed images from our own media storage and GyFTR's CDN (brand logos); nothing else is fetched.
+  const inliner = new ImageInliner([storage.publicBaseUrl, 'https://cdn.gyftr.com', 'https://cdn2.gyftr.com'], logger);
+  const publications = new PublicationService(pages, repos.pages, repos.publications, payloads, new PageRenderer(), inliner, urls, logger, {
+    requireHttpsImages: env.isProduction,
+  });
+
+  // A brand or site-settings change re-renders the published pages.
+  changes.subscribe(() => publications.refreshAll());
+
+  const services = {
+    audit,
+    site,
+    auth: new AuthService(repos.users, hasher, sessionTokens, audit),
+    users: new UserService(repos.users, hasher, audit),
+    occasions: new OccasionService(repos.occasions, urls, audit),
+    templates: new TemplateService(repos.templates, repos.pages, audit),
+    brands: new BrandService(repos.brands, changes, audit, new URL(env.PAGE_PUBLIC_BASE_URL).origin),
+    media: new MediaService(repos.media, storage, new SharpImageProcessor(), audit, logger),
+    pages,
+    publications,
+  };
+
+  const controllers = {
+    auth: new AuthController(services.auth, { secure: env.isProduction }),
+    pages: new PageController(services.pages, services.templates, urls.baseUrl, services.publications),
+    brands: new BrandController(services.brands),
+    media: new MediaController(services.media),
+    catalog: new CatalogController(services.occasions, services.templates, services.site, services.audit),
+    users: new UserController(services.users),
+  };
+
+  return { env, logger, prisma, storage, services, controllers };
+}
+
+export type Container = ReturnType<typeof createContainer>;
