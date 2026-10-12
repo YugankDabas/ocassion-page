@@ -299,7 +299,8 @@ Manager secret; the container is told only the secret's name.
   `"DB_NAME": occasion_admin`, is still read, with a warning in the log asking to fix it.)
 - Key names are not case-sensitive (`db_host` = `DB_HOST`). Keys the application does not know are ignored.
 - `DB_HOST` is the host name only: no `postgresql://`, no port.
-- The database connection is built in memory at start-up, with TLS required and at most 10 connections per container.
+- The database connection is built in memory at start-up: always encrypted (TLS), at most 10 connections per
+  container. The RDS certificate is not checked against a certificate authority, as with PostgreSQL's own `sslmode=require`.
 - `JWT_SECRET` must be at least 32 characters and different in staging and production.
 - `S3_BUCKET` is the bucket name only: no `s3://`, no dots. The region is `AWS_REGION`. Images are served
   from `https://<bucket>.s3.<region>.amazonaws.com`, so the bucket must allow public reads of its objects.
@@ -309,12 +310,15 @@ Manager secret; the container is told only the secret's name.
 
 1. `AWS_SECRET_NAME` is read → the secret is fetched from Secrets Manager (3 attempts).
 2. The known keys are copied into the environment; the database connection is built from the `DB_*` fields.
-3. Every setting is validated. A missing or malformed value stops the start-up with a message naming it,
-   for example `Database configuration is incomplete. Missing: DB_PASSWORD`.
-4. The database schema is created or updated by applying `prisma/migrations` (on by default; an empty
-   database only has to exist).
-5. A new database is prepared: occasions, default site settings, the first administrator (section 9.1).
-6. The server starts and re-checks the published pages once.
+3. Every setting is validated. A missing database field or JWT secret stops the start-up with a message naming it,
+   for example `Database configuration is incomplete. Missing: DB_PASSWORD`. A missing `S3_BUCKET` or panel
+   address does not: the service starts, logs `Configuration problem`, and only image upload is unavailable.
+4. The server starts answering at once. `GET /healthz` returns `{"status":"ok","database":"starting|ready|unavailable"}`.
+5. In the background the database schema is created or updated (`prisma/migrations`), then a new database is
+   prepared: occasions, default site settings, the first administrator (section 9.1). If the database cannot be
+   reached, or its user cannot create tables, the reason is logged (`Database is not ready`) and it retries every
+   15 seconds; until then the API answers `503 STARTING` instead of the container restarting.
+6. Published pages are re-checked once.
 
 ### 8.4 Optional settings (defaults)
 

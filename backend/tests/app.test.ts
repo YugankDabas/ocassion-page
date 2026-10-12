@@ -1,5 +1,5 @@
 import type { Server } from 'node:http';
-import { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
 import { createContainer } from '../src/container';
@@ -7,7 +7,13 @@ import { loadEnv } from '../src/config/env';
 import { createLogger } from '../src/lib/logger';
 
 const frontendOrigin = 'https://occasion-admin.gyftr.net';
-const prisma = new PrismaClient();
+// No database here: these tests are about origins only, and say so if a request ever reaches for one.
+const prisma = new Proxy({}, {
+  get(_target, property) {
+    if (property === 'then') return undefined;
+    throw new Error(`The CORS tests must not touch the database (prisma.${String(property)})`);
+  },
+}) as unknown as PrismaClient;
 let baseUrl: string;
 let server: Server | undefined;
 
@@ -35,7 +41,35 @@ beforeAll(async () => {
 afterAll(async () => {
   const runningServer = server;
   if (runningServer) await new Promise<void>((resolve, reject) => runningServer.close((err) => (err ? reject(err) : resolve())));
-  await prisma.$disconnect();
+});
+
+describe('while the database is being prepared', () => {
+  it('answers the health check and tells the panel it is starting, with CORS headers', async () => {
+    const env = loadEnv({ NODE_ENV: 'test', DATABASE_URL: 'postgresql://localhost/occasion_admin', JWT_SECRET: 'x'.repeat(48), PAGE_PUBLIC_BASE_URL: 'https://www.gyftr.com/occasion', PUBLIC_UPLOADS_BASE_URL: 'http://localhost:4545/uploads', ADMIN_FRONTEND_ORIGIN: frontendOrigin });
+    const startup = { ready: false, error: null as string | null };
+    const starting = createApp(createContainer(env, createLogger('silent', false), prisma), startup).listen(0, '127.0.0.1');
+    await new Promise<void>((resolve) => starting.once('listening', resolve));
+    const address = starting.address();
+    if (!address || typeof address === 'string') throw new Error('no port');
+    const url = `http://127.0.0.1:${address.port}`;
+    try {
+      const health = await fetch(`${url}/healthz`);
+      expect(health.status).toBe(200);
+      expect(await health.json()).toEqual({ status: 'ok', database: 'starting' });
+
+      const login = await fetch(`${url}/api/v1/auth/login`, { method: 'POST', headers: { Origin: frontendOrigin, 'content-type': 'application/json' }, body: '{}' });
+      expect(login.status).toBe(503);
+      expect(login.headers.get('access-control-allow-origin')).toBe(frontendOrigin); // the browser can read the reply
+      expect(((await login.json()) as { error: { code: string } }).error.code).toBe('STARTING');
+
+      startup.error = 'connection refused';
+      expect(await (await fetch(`${url}/healthz`)).json()).toEqual({ status: 'ok', database: 'unavailable' });
+      startup.ready = true;
+      expect((await fetch(`${url}/api/v1/auth/me`, { headers: { Origin: frontendOrigin } })).status).toBe(401); // the API itself answers now
+    } finally {
+      await new Promise<void>((resolve) => starting.close(() => resolve()));
+    }
+  });
 });
 
 describe('admin API CORS', () => {

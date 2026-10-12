@@ -47,10 +47,7 @@ const settings = z.object({
    * from the bucket's own https address. Without it (local development) they are written to
    * LOCAL_UPLOAD_DIR and served by this API under PUBLIC_UPLOADS_BASE_URL.
    */
-  S3_BUCKET: z
-    .string()
-    .regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/, 'must be a bucket name: lowercase letters, digits and hyphens (no dots, no s3:// prefix)')
-    .optional(),
+  S3_BUCKET: z.string().trim().optional(),
   S3_PREFIX: z.string().default('occasion-pages'),
   AWS_REGION: z.string().regex(/^[a-z]{2}(-[a-z]+)+-\d$/, 'must be an AWS region such as ap-south-1').default('ap-south-1'),
   LOCAL_UPLOAD_DIR: z.string().default('./uploads'),
@@ -62,18 +59,30 @@ const settings = z.object({
 export const SETTING_KEYS = Object.keys(settings.shape);
 
 const envSchema = settings.superRefine((env, ctx) => {
-  if (env.NODE_ENV === 'production' && !env.ADMIN_FRONTEND_ORIGIN.startsWith('https://')) {
-    // Otherwise every request from the real panel would be refused as a foreign origin.
-    ctx.addIssue({ code: 'custom', path: ['ADMIN_FRONTEND_ORIGIN'], message: 'ADMIN_FRONTEND_ORIGIN must be the https origin of the admin panel when NODE_ENV=production' });
-  }
-  if (env.S3_BUCKET) return;
-  if (env.NODE_ENV === 'production') {
-    // A container's disk is lost on every deploy, so deployed environments must store uploads in S3.
-    ctx.addIssue({ code: 'custom', path: ['S3_BUCKET'], message: 'S3_BUCKET is required when NODE_ENV=production' });
-  } else if (!env.PUBLIC_UPLOADS_BASE_URL) {
+  if (!env.S3_BUCKET && env.NODE_ENV !== 'production' && !env.PUBLIC_UPLOADS_BASE_URL) {
     ctx.addIssue({ code: 'custom', path: ['PUBLIC_UPLOADS_BASE_URL'], message: 'Set S3_BUCKET, or PUBLIC_UPLOADS_BASE_URL to store uploads on local disk' });
   }
 });
+
+/** A bucket name usable in the bucket's https address: lowercase letters, digits and hyphens (no dots). */
+export const isBucketName = (name: string | undefined): name is string => !!name && /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(name);
+
+/**
+ * Settings that are wrong but must not keep the service down: it starts, logs these, and the
+ * affected feature says what is missing. (A missing database or JWT secret still stops the start.)
+ */
+export function configurationProblems(env: Env): string[] {
+  const problems: string[] = [];
+  if (env.isProduction && !env.ADMIN_FRONTEND_ORIGIN.startsWith('https://')) {
+    problems.push(`ADMIN_FRONTEND_ORIGIN is "${env.ADMIN_FRONTEND_ORIGIN}": it must be the https address of the admin panel, otherwise the panel's requests are refused`);
+  }
+  if (!env.S3_BUCKET) {
+    if (env.isProduction) problems.push('S3_BUCKET is not set: image upload is disabled until it is');
+  } else if (!isBucketName(env.S3_BUCKET)) {
+    problems.push(`S3_BUCKET "${env.S3_BUCKET}" is not usable (lowercase letters, digits and hyphens only; no dots, no s3:// prefix): image upload is disabled`);
+  }
+  return problems;
+}
 
 export type Env = z.infer<typeof envSchema> & { isProduction: boolean };
 

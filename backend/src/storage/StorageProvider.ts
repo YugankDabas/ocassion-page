@@ -1,6 +1,7 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { ServiceUnavailableError } from '../lib/errors';
 
 /** Where uploaded files live: S3 when S3_BUCKET is set, local disk otherwise. Callers do not know which. */
 export interface IStorageProvider {
@@ -58,6 +59,8 @@ export class LocalDiskStorage implements IStorageProvider {
 export class S3Storage implements IStorageProvider {
   private readonly client: S3Client;
   readonly publicBaseUrl: string;
+  /** Set once an uploaded file has been fetched back over its public address. */
+  private publicReadConfirmed = false;
 
   constructor(private readonly opts: { bucket: string; region: string; prefix: string }) {
     this.client = new S3Client({ region: opts.region });
@@ -77,7 +80,32 @@ export class S3Storage implements IStorageProvider {
         CacheControl: 'public, max-age=31536000, immutable',
       }),
     );
-    return { url: `${this.publicBaseUrl}/${objectKey}` };
+    const url = `${this.publicBaseUrl}/${objectKey}`;
+    await this.confirmPublicRead(key, url);
+    return { url };
+  }
+
+  /**
+   * Pages on gyftr.com load images straight from the bucket, so a stored file must be readable by
+   * anyone at its address. Checked until it has worked once: a private bucket (Block Public Access)
+   * or one in another region is reported at the first upload instead of as broken images later.
+   */
+  private async confirmPublicRead(key: string, url: string): Promise<void> {
+    if (this.publicReadConfirmed) return;
+    let status: number;
+    try {
+      status = (await fetch(url, { method: 'HEAD', redirect: 'manual', signal: AbortSignal.timeout(5000) })).status;
+    } catch {
+      return; // the check itself could not run (no outbound access): do not block the upload
+    }
+    if (status >= 200 && status < 300) {
+      this.publicReadConfirmed = true;
+      return;
+    }
+    await this.delete(key).catch(() => undefined);
+    throw new ServiceUnavailableError(
+      `The image was stored in bucket "${this.opts.bucket}" but cannot be read publicly (S3 answered ${status}). The bucket must be in ${this.opts.region} and allow public reads of its objects.`,
+    );
   }
 
   async delete(key: string): Promise<void> {
@@ -88,4 +116,15 @@ export class S3Storage implements IStorageProvider {
   private objectKey(key: string): string {
     return this.opts.prefix ? `${this.opts.prefix.replace(/\/$/, '')}/${key}` : key;
   }
+}
+
+/** Used when no usable media bucket is configured: everything else works, uploads explain what is missing. */
+export class UnavailableStorage implements IStorageProvider {
+  readonly publicBaseUrl = '';
+
+  async put(): Promise<{ url: string }> {
+    throw new ServiceUnavailableError('Image upload is not available yet: the media bucket (S3_BUCKET) is not configured for this environment.');
+  }
+
+  async delete(): Promise<void> {}
 }

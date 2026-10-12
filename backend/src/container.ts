@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import type { Env } from './config/env';
+import { isBucketName, type Env } from './config/env';
 import { PageUrlPolicy } from './domain/pages/PageUrlPolicy';
 import { SectionRegistry } from './domain/sections/SectionRegistry';
 import { TemplateFactory } from './domain/templates/TemplateFactory';
@@ -37,7 +37,7 @@ import { PageService } from './services/PageService';
 import { PublicationService } from './services/PublicationService';
 import { BcryptPasswordHasher, SessionTokenService } from './services/security';
 import { UserService } from './services/UserService';
-import { LocalDiskStorage, S3Storage, type IStorageProvider } from './storage/StorageProvider';
+import { LocalDiskStorage, S3Storage, UnavailableStorage, type IStorageProvider } from './storage/StorageProvider';
 
 /**
  * Composition root: the only place that knows concrete implementations.
@@ -57,9 +57,12 @@ export function createContainer(env: Env, logger: Logger, prisma = new PrismaCli
   };
 
   // Uploaded images: the S3 bucket when one is configured, local disk otherwise (development).
-  const storage: IStorageProvider = env.S3_BUCKET
+  // A deployed container's disk is lost on every deploy, so without a usable bucket uploads are refused, not kept on disk.
+  const storage: IStorageProvider = isBucketName(env.S3_BUCKET)
     ? new S3Storage({ bucket: env.S3_BUCKET, region: env.AWS_REGION, prefix: env.S3_PREFIX })
-    : new LocalDiskStorage(env.LOCAL_UPLOAD_DIR, env.PUBLIC_UPLOADS_BASE_URL!);
+    : env.isProduction || env.S3_BUCKET || !env.PUBLIC_UPLOADS_BASE_URL
+      ? new UnavailableStorage()
+      : new LocalDiskStorage(env.LOCAL_UPLOAD_DIR, env.PUBLIC_UPLOADS_BASE_URL);
 
   const html = new HtmlSanitizer();
   const registry = SectionRegistry.createDefault(html);
@@ -73,7 +76,7 @@ export function createContainer(env: Env, logger: Logger, prisma = new PrismaCli
   const pages = new PageService(repos.pages, repos.occasions, repos.templates, repos.brands, registry, new TemplateFactory(), audit, urls);
   const payloads = new PagePayloadService(repos.occasions, repos.brands, site, registry);
   // Downloads embed images from our own media storage and GyFTR's CDN (brand logos); nothing else is fetched.
-  const inliner = new ImageInliner([storage.publicBaseUrl, 'https://cdn.gyftr.com', 'https://cdn2.gyftr.com'], logger);
+  const inliner = new ImageInliner([storage.publicBaseUrl, 'https://cdn.gyftr.com', 'https://cdn2.gyftr.com'].filter(Boolean), logger);
   const publications = new PublicationService(pages, repos.pages, repos.publications, payloads, new PageRenderer(), inliner, urls, logger, {
     requireHttpsImages: env.isProduction,
   });

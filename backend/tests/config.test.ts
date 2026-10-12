@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { applyDatabaseUrl } from '../src/config/database';
-import { loadEnv } from '../src/config/env';
+import { configurationProblems, loadEnv } from '../src/config/env';
 import { applySecret, loadSecretsIntoEnv, parseSecret } from '../src/config/secrets';
 
 const secretsManager = vi.hoisted(() => ({ send: vi.fn() }));
@@ -19,13 +19,13 @@ describe('database settings', () => {
   it('builds the connection from separate fields, with TLS and a capped pool', () => {
     const env: NodeJS.ProcessEnv = { DB_HOST: 'db.abc.ap-south-1.rds.amazonaws.com', DB_NAME: 'occasion_admin', DB_USER: 'occasion', DB_PASSWORD: 'secret' };
     applyDatabaseUrl(env);
-    expect(env.DATABASE_URL).toBe('postgresql://occasion:secret@db.abc.ap-south-1.rds.amazonaws.com:5432/occasion_admin?sslmode=require&connection_limit=10&pool_timeout=10');
+    expect(env.DATABASE_URL).toBe('postgresql://occasion:secret@db.abc.ap-south-1.rds.amazonaws.com:5432/occasion_admin?sslmode=require&sslaccept=accept_invalid_certs&connection_limit=10&pool_timeout=10');
   });
 
   it('accepts any letter case for the names, trims values and honours DB_PORT', () => {
     const env: NodeJS.ProcessEnv = { db_host: ' 10.0.0.5 ', Db_Port: '6432', DB_Name: 'occasion_admin', db_user: 'occasion', Db_Password: 'secret' };
     applyDatabaseUrl(env);
-    expect(env.DATABASE_URL).toBe('postgresql://occasion:secret@10.0.0.5:6432/occasion_admin?sslmode=require&connection_limit=10&pool_timeout=10');
+    expect(env.DATABASE_URL).toBe('postgresql://occasion:secret@10.0.0.5:6432/occasion_admin?sslmode=require&sslaccept=accept_invalid_certs&connection_limit=10&pool_timeout=10');
   });
 
   it('keeps special characters in the password intact', () => {
@@ -67,7 +67,7 @@ describe('Secrets Manager secret', () => {
     expect(secretsManager.send.mock.calls[0]![0]).toMatchObject({ input: { SecretId: 'occasion-admin/staging' } });
     const settings = loadEnv(env);
     expect(settings).toMatchObject({ S3_BUCKET: 'gyftr-occasion-media', PAGE_PUBLIC_BASE_URL: 'https://www.gyftr.com/occasion', isProduction: true });
-    expect(settings.DATABASE_URL).toBe('postgresql://occasion:p%40ss@db.internal:5432/occasion_admin?sslmode=require&connection_limit=10&pool_timeout=10');
+    expect(settings.DATABASE_URL).toBe('postgresql://occasion:p%40ss@db.internal:5432/occasion_admin?sslmode=require&sslaccept=accept_invalid_certs&connection_limit=10&pool_timeout=10');
   });
 
   it('stops the start-up with a clear message when the secret cannot be read', async () => {
@@ -108,6 +108,11 @@ describe('a secret that is not valid JSON', () => {
     });
   });
 
+  it('keeps commas and braces inside an unquoted value', () => {
+    const text = '{\n  "DB_USER": occasion,\n  "DB_PASSWORD": Abc,123}x,\n  "JWT_SECRET": a,b+c/d==\n}';
+    expect(parseSecret(text).values).toEqual({ DB_USER: 'occasion', DB_PASSWORD: 'Abc,123}x', JWT_SECRET: 'a,b+c/d==' });
+  });
+
   it('reads KEY=value lines and a single-line secret', () => {
     expect(parseSecret('DB_HOST=db.internal\r\nDB_NAME=occasion_admin\n').values).toEqual({ DB_HOST: 'db.internal', DB_NAME: 'occasion_admin' });
     expect(parseSecret('{"DB_HOST": db.internal, "DB_NAME": occasion_admin}').values).toEqual({ DB_HOST: 'db.internal', DB_NAME: 'occasion_admin' });
@@ -118,7 +123,7 @@ describe('a secret that is not valid JSON', () => {
     secretsManager.send.mockResolvedValueOnce({ SecretString: '{"DB_HOST": "db.internal", "DB_NAME": occasion_admin, "DB_USER": "u", "DB_PASSWORD": "p"}' });
     const env: NodeJS.ProcessEnv = { AWS_SECRET_NAME: 'occasion-admin' };
     await loadSecretsIntoEnv(env);
-    expect(env.DATABASE_URL).toBe('postgresql://u:p@db.internal:5432/occasion_admin?sslmode=require&connection_limit=10&pool_timeout=10');
+    expect(env.DATABASE_URL).toBe('postgresql://u:p@db.internal:5432/occasion_admin?sslmode=require&sslaccept=accept_invalid_certs&connection_limit=10&pool_timeout=10');
 
     secretsManager.send.mockReset();
     secretsManager.send.mockResolvedValue({ SecretString: 'just some text' });
@@ -127,12 +132,24 @@ describe('a secret that is not valid JSON', () => {
   });
 });
 
-describe('admin panel origin', () => {
-  it('must be the https origin of the panel in production, and an origin only', () => {
-    const prod = { ...base, NODE_ENV: 'production', DATABASE_URL: 'postgresql://u:p@h:5432/d', S3_BUCKET: 'gyftr-occasion-media' };
-    expect(() => loadEnv(prod)).toThrow('ADMIN_FRONTEND_ORIGIN must be the https origin');
+describe('settings that are wrong but must not keep the service down', () => {
+  const prod = { ...base, NODE_ENV: 'production', DATABASE_URL: 'postgresql://u:p@h:5432/d' };
+
+  it('starts without a bucket or a panel address in production, and reports both', () => {
+    const problems = configurationProblems(loadEnv(prod));
+    expect(problems).toHaveLength(2);
+    expect(problems[0]).toContain('ADMIN_FRONTEND_ORIGIN');
+    expect(problems[1]).toContain('S3_BUCKET is not set');
+  });
+
+  it('reports a bucket name that cannot be used, and nothing when everything is right', () => {
+    const ok = { ...prod, ADMIN_FRONTEND_ORIGIN: 'https://occasion-admin.gyftr.net' };
+    expect(configurationProblems(loadEnv({ ...ok, S3_BUCKET: 's3://My.Bucket' }))).toEqual([expect.stringContaining('is not usable')]);
+    expect(configurationProblems(loadEnv({ ...ok, S3_BUCKET: 'gyftr-occasion-media' }))).toEqual([]);
+  });
+
+  it('still rejects a panel address that is not an origin', () => {
     expect(() => loadEnv({ ...prod, ADMIN_FRONTEND_ORIGIN: 'https://occasion-admin.gyftr.net/' })).toThrow('origin only');
-    expect(loadEnv({ ...prod, ADMIN_FRONTEND_ORIGIN: 'https://occasion-admin.gyftr.net' }).ADMIN_FRONTEND_ORIGIN).toBe('https://occasion-admin.gyftr.net');
   });
 });
 
@@ -158,11 +175,6 @@ describe('storage settings', () => {
   it('needs only the bucket name; the region defaults to ap-south-1', () => {
     const env = loadEnv({ ...base, NODE_ENV: 'production', ADMIN_FRONTEND_ORIGIN: 'https://occasion-admin.gyftr.net', DATABASE_URL: 'postgresql://u:p@h:5432/d', S3_BUCKET: 'gyftr-occasion-media' });
     expect(env).toMatchObject({ S3_BUCKET: 'gyftr-occasion-media', AWS_REGION: 'ap-south-1', S3_PREFIX: 'occasion-pages' });
-  });
-
-  it('refuses to run in production without a bucket, and rejects a malformed bucket name', () => {
-    expect(() => loadEnv({ ...base, NODE_ENV: 'production', DATABASE_URL: 'postgresql://u:p@h:5432/d' })).toThrow('S3_BUCKET is required');
-    expect(() => loadEnv({ ...base, DATABASE_URL: 'postgresql://u:p@h:5432/d', S3_BUCKET: 's3://My.Bucket' })).toThrow('bucket name');
   });
 
   it('falls back to local disk in development', () => {

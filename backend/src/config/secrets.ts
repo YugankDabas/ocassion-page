@@ -38,8 +38,9 @@ export function parseSecret(text: string): { values: Record<string, unknown>; le
     // fall through to the line-by-line reading
   }
   const values: Record<string, unknown> = {};
-  // KEY, then ":" or "=", then a "double-quoted", 'single-quoted' or bare value (bare = up to the next comma or line end).
-  const entry = /"?([A-Za-z_][A-Za-z0-9_]*)"?[ \t]*[:=][ \t]*("(?:[^"\\]|\\.)*"|'[^']*'|[^,\r\n}]*)/g;
+  // KEY, then ":" or "=", then a "double-quoted", 'single-quoted' or bare value. A bare value runs to the end of
+  // its line (commas and braces inside it are kept); on a single line it ends where the next `, KEY:` begins.
+  const entry = /"?([A-Za-z_][A-Za-z0-9_]*)"?[ \t]*[:=][ \t]*("(?:[^"\\]|\\.)*"|'[^']*'|[^\r\n]*?(?=[ \t]*,?[ \t]*(?:[\r\n]|\}?\s*$|,[ \t]*"?[A-Za-z_][A-Za-z0-9_]*"?[ \t]*[:=])))/g;
   for (const [, key = '', raw = ''] of text.matchAll(entry)) {
     let value: unknown = raw.trim();
     if (raw.startsWith('"')) {

@@ -10,34 +10,20 @@ import { errorHandler, notFoundHandler } from './http/middleware';
 import { adminRouter } from './http/routes';
 import { LocalDiskStorage } from './storage/StorageProvider';
 
-export function createApp(c: Container): Express {
+/** Whether the database has been prepared (schema, first-run data). Shared with server.ts. */
+export interface StartupState {
+  ready: boolean;
+  /** Why it is not ready yet; logged, never sent to clients. */
+  error: string | null;
+}
+
+export function createApp(c: Container, startup: StartupState = { ready: true, error: null }): Express {
   const { env, logger } = c;
   const app = express();
 
   app.disable('x-powered-by');
   app.set('trust proxy', env.TRUST_PROXY);
   app.set('etag', false);
-  app.use((req, res, next) => {
-    if (req.path !== '/api/v1' && !req.path.startsWith('/api/v1/')) return next();
-    const origin = req.get('origin');
-    if (!origin) return next();
-    // Allowed: the admin panel, and this API's own origin (when the API itself serves the panel).
-    const ownOrigin = `${req.protocol}://${req.get('host')}`;
-    if (origin === ownOrigin) return next();
-    if (origin !== env.ADMIN_FRONTEND_ORIGIN) {
-      return res.status(403).json({ error: { code: 'ORIGIN_NOT_ALLOWED', message: 'This origin is not allowed.' } });
-    }
-    res.set({
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Credentials': 'true',
-      'Access-Control-Allow-Headers': 'Content-Type, X-CSRF-Token',
-      'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS',
-      Vary: 'Origin',
-    });
-    if (req.method === 'OPTIONS') return res.status(204).end();
-    next();
-  });
-
   app.use(
     pinoHttp({
       logger,
@@ -57,6 +43,30 @@ export function createApp(c: Container): Express {
       customLogLevel: (_req, res, err) => (err || res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info'),
     }),
   );
+  // After the request log, so a refused origin leaves a trace.
+  app.use((req, res, next) => {
+    if (req.path !== '/api/v1' && !req.path.startsWith('/api/v1/')) return next();
+    const origin = req.get('origin');
+    if (!origin) return next();
+    // Allowed: the admin panel, and this API's own origin (when the API itself serves the panel).
+    const ownOrigin = `${req.protocol}://${req.get('host')}`;
+    if (origin === ownOrigin) return next();
+    if (origin !== env.ADMIN_FRONTEND_ORIGIN) {
+      // Logged with both values: the usual cause is the panel being opened on another address than the one configured.
+      req.log.warn({ origin, allowed: env.ADMIN_FRONTEND_ORIGIN }, 'Request refused: origin is not the admin panel');
+      return res.status(403).json({ error: { code: 'ORIGIN_NOT_ALLOWED', message: 'This origin is not allowed.' } });
+    }
+    res.set({
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Allow-Headers': 'Content-Type, X-CSRF-Token',
+      'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS',
+      Vary: 'Origin',
+    });
+    if (req.method === 'OPTIONS') return res.status(204).end();
+    next();
+  });
+
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -73,13 +83,18 @@ export function createApp(c: Container): Express {
   app.use(compression());
 
   // Health check for the load balancer.
+  // Answers as soon as the process is up, so the load balancer keeps routing and the panel gets a real reply.
   app.get('/healthz', (_req, res) => {
-    res.json({ status: 'ok' });
+    res.json({ status: 'ok', database: startup.ready ? 'ready' : startup.error ? 'unavailable' : 'starting' });
   });
 
   // Admin API. The panel is served from the same origin, so no CORS is enabled.
   app.use(
     '/api/v1',
+    (_req, res, next) => {
+      if (startup.ready) return next();
+      res.status(503).json({ error: { code: 'STARTING', message: 'The service is starting or cannot reach its database yet. Try again in a moment.' } });
+    },
     express.json({ limit: '2mb' }),
     express.urlencoded({ extended: false, limit: '2mb' }), // the preview is requested with a form post
     cookieParser(),

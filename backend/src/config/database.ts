@@ -46,7 +46,10 @@ export function applyDatabaseUrl(env: NodeJS.ProcessEnv = process.env): void {
   const user = encodeURIComponent(readSetting(env, 'DB_USER')!);
   const password = encodeURIComponent(readSetting(env, 'DB_PASSWORD')!);
   const name = encodeURIComponent(readSetting(env, 'DB_NAME')!);
-  // TLS for every remote database; at most 10 connections per container.
-  const options = `${LOCAL_HOSTS.has(host.toLowerCase()) ? '' : 'sslmode=require&'}connection_limit=10&pool_timeout=10`;
+  // Every remote connection is encrypted (sslmode=require). The server certificate is not checked against a CA:
+  // RDS certificates are signed by Amazon's own RDS root, which is not in the container's trust store, and strict
+  // checking would refuse the connection. This is what `sslmode=require` means in PostgreSQL's own clients.
+  // At most 10 connections per container.
+  const options = `${LOCAL_HOSTS.has(host.toLowerCase()) ? '' : 'sslmode=require&sslaccept=accept_invalid_certs&'}connection_limit=10&pool_timeout=10`;
   env.DATABASE_URL = `postgresql://${user}:${password}@${host}:${port}/${name}?${options}`;
 }
