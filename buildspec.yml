@@ -2,11 +2,17 @@ version: 0.2
 
 phases:
   pre_build:
+    on-failure: ABORT
     commands:
       - set -euo pipefail
+      - aws ecs describe-services --cluster "$ECS_CLUSTER_NAME" --services "$BACKEND_ECS_SERVICE" "$FRONTEND_ECS_SERVICE" --output json > ecs-services.json
+      - |
+        jq -r '.failures[]? | "ECS lookup failed: \(.reason) \(.detail // "")"' ecs-services.json
+      - jq -e --arg backend "$BACKEND_ECS_SERVICE" --arg frontend "$FRONTEND_ECS_SERVICE" '[.services[].serviceName] | index($backend) != null and index($frontend) != null' ecs-services.json
       - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com"
       - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin 653380732738.dkr.ecr.ap-south-1.amazonaws.com
   build:
+    on-failure: ABORT
     commands:
       - IMAGE_TAG="${CODEBUILD_RESOLVED_SOURCE_VERSION:0:12}-${CODEBUILD_BUILD_NUMBER}"
       - docker build --platform linux/arm64 -f backend/Dockerfile --build-arg NODE_IMAGE="$NODE_IMAGE" -t "$BACKEND_ECR_URI:$IMAGE_TAG" .

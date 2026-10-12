@@ -129,8 +129,8 @@ their respective container port and `GET /healthz` health check; DNS/TLS must ro
 
 1. ECS cluster `B2C-APPNode` using Managed Instances and separate backend/frontend services
    `Occasion-Admin-Backend-Service` and `Occasion-Admin-Frontend-Service` in `ap-south-1`.
-   Tasks use ARM64; container names are `Occasion-Admin-Backend-Container` and
-   `Occasion-Admin-Frontend-Container`.
+   Create these services before running the pipeline. Task definitions use ARM64 Managed Instances;
+   container names are `Occasion-Admin-Backend-Container` and `Occasion-Admin-Frontend-Container`.
 2. An S3 bucket for CodePipeline artifacts and an active CodeStar connection to the GitHub repository.
 3. ECS task execution role with ECR image-pull and CloudWatch Logs permissions; backend task role with
    Secrets Manager and media S3 permissions.
@@ -174,6 +174,9 @@ environment variable. It needs ECR push permissions on both application reposito
 cross-account Node base-image repository, ECS task-definition registration and service update/describe
 permissions, `iam:PassRole` for the task roles, and the standard CodePipeline artifact bucket and CloudWatch Logs
 permissions. The backend ECS task role needs the Secrets Manager and media S3 permissions described above.
+If ECS returns `ServiceNotFoundException`, verify the exact ECS cluster and service names in the CodeBuild
+variables, confirm the services already exist in `ap-south-1`, and check the CodeBuild role has
+`ecs:DescribeServices` / `ecs:UpdateService` access.
 
 The task-definition JSON files use `requiresCompatibilities: ["MANAGED_INSTANCES"]`, following the sample
 task definition; do not select Fargate. The sample uses `ecsTaskExecutionRole` for both role fields. That can

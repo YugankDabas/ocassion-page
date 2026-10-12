@@ -4,7 +4,7 @@ FROM ${NODE_IMAGE} AS build
 WORKDIR /app/backend
 COPY backend/package.json backend/package-lock.json ./
 COPY backend/prisma ./prisma
-RUN npm ci
+RUN npm ci --include=dev
 COPY backend/ ./
 RUN npm run build
 
@@ -15,7 +15,7 @@ ENV NODE_ENV=production \
 WORKDIR /app/backend
 COPY backend/package.json backend/package-lock.json ./
 COPY backend/prisma ./prisma
-RUN npm ci && npm prune --omit=dev
+RUN npm ci --omit=dev
 COPY --from=build /app/backend/dist ./dist
 COPY backend/assets ./assets
 EXPOSE 4545
