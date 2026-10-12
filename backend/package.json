@@ -17,8 +17,6 @@
     "prisma:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "db:seed": "tsx --env-file=.env prisma/seed.ts",
-    "admin:create": "tsx --env-file=.env scripts/create-admin.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

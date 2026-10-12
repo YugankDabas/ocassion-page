@@ -24,8 +24,6 @@
   },
   "include": [
     "src",
-    "prisma",
-    "scripts",
     "tests"
   ]
 }

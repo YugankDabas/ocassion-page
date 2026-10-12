@@ -63,6 +63,13 @@ describe('admin API CORS', () => {
     expect(response.headers.get('access-control-allow-origin')).toBeNull();
   });
 
+  it('accepts the API\'s own origin and requests without an Origin header', async () => {
+    const own = await fetch(`${baseUrl}/api/v1/auth/me`, { headers: { Origin: baseUrl } });
+    expect(own.status).toBe(401); // reached the API: not signed in, but not refused as a foreign origin
+    expect((await fetch(`${baseUrl}/api/v1/auth/me`)).status).toBe(401);
+    expect((await fetch(`${baseUrl}/healthz`, { headers: { Origin: 'https://other.gyftr.net' } })).status).toBe(200);
+  });
+
   it('sets CORS headers on API responses from the configured origin', async () => {
     const response = await fetch(`${baseUrl}/api/v1/auth/me`, {
       headers: { Origin: frontendOrigin },

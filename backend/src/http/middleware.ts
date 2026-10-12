@@ -48,6 +48,21 @@ export function requirePermission(permission: Permission): RequestHandler {
   };
 }
 
+/** Paths (under /api/v1) an account may still use while it has a password it was given. */
+const ALLOWED_BEFORE_PASSWORD_CHANGE = new Set(['/auth/me', '/auth/logout', '/auth/logout-all', '/auth/change-password']);
+
+/**
+ * An account that still has the password it was given (the default first administrator, an
+ * invited user, a reset) can only change that password: everything else is refused here, on
+ * the server, whatever the panel shows.
+ */
+export const requireOwnPassword: RequestHandler = (req, _res, next) => {
+  if (req.user?.mustChangePassword && !ALLOWED_BEFORE_PASSWORD_CHANGE.has(req.path)) {
+    return next(new ForbiddenError('Change your password to continue'));
+  }
+  next();
+};
+
 /**
  * Double-submit CSRF check for cookie-authenticated, state-changing requests.
  * The token lives in an httpOnly cookie and is handed to the SPA in the

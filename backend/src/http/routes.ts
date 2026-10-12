@@ -7,6 +7,7 @@ import {
   csvUpload,
   imageUpload,
   loginRateLimit,
+  requireOwnPassword,
   requirePermission as allow,
 } from './middleware';
 
@@ -23,6 +24,8 @@ export function adminRouter(c: Container): Router {
   // Everything below requires a valid session; mutations also require the CSRF token.
   r.use(authenticate(c.services.auth));
   r.use(csrfProtection);
+  // Until a given password is replaced with the user's own, only the account endpoints work.
+  r.use(requireOwnPassword);
 
   r.get('/auth/me', auth.me);
   r.post('/auth/logout', auth.logout);

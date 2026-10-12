@@ -21,6 +21,9 @@ export function createApp(c: Container): Express {
     if (req.path !== '/api/v1' && !req.path.startsWith('/api/v1/')) return next();
     const origin = req.get('origin');
     if (!origin) return next();
+    // Allowed: the admin panel, and this API's own origin (when the API itself serves the panel).
+    const ownOrigin = `${req.protocol}://${req.get('host')}`;
+    if (origin === ownOrigin) return next();
     if (origin !== env.ADMIN_FRONTEND_ORIGIN) {
       return res.status(403).json({ error: { code: 'ORIGIN_NOT_ALLOWED', message: 'This origin is not allowed.' } });
     }

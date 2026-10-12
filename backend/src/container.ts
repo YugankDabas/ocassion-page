@@ -96,7 +96,7 @@ export function createContainer(env: Env, logger: Logger, prisma = new PrismaCli
 
   const controllers = {
     auth: new AuthController(services.auth, { secure: env.isProduction }),
-    pages: new PageController(services.pages, services.templates, urls.baseUrl, services.publications),
+    pages: new PageController(services.pages, services.templates, urls.baseUrl, services.publications, env.ADMIN_FRONTEND_ORIGIN),
     brands: new BrandController(services.brands),
     media: new MediaController(services.media),
     catalog: new CatalogController(services.occasions, services.templates, services.site, services.audit),

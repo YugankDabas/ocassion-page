@@ -20,6 +20,7 @@ export interface UserRecord {
   passwordHash: string;
   role: Role;
   isActive: boolean;
+  mustChangePassword: boolean;
   tokenVersion: number;
   lastLoginAt: Date | null;
   createdAt: Date;
@@ -29,10 +30,10 @@ export interface IUserRepository {
   findById(id: string): Promise<UserRecord | null>;
   findByEmail(email: string): Promise<UserRecord | null>;
   list(): Promise<UserRecord[]>;
-  create(data: { email: string; name: string; role: Role; passwordHash: string }): Promise<UserRecord>;
+  create(data: { email: string; name: string; role: Role; passwordHash: string; mustChangePassword: boolean }): Promise<UserRecord>;
   update(
     id: string,
-    data: Partial<Pick<UserRecord, 'name' | 'role' | 'isActive' | 'passwordHash'>> & { bumpTokenVersion?: boolean },
+    data: Partial<Pick<UserRecord, 'name' | 'role' | 'isActive' | 'passwordHash' | 'mustChangePassword'>> & { bumpTokenVersion?: boolean },
   ): Promise<UserRecord>;
   touchLogin(id: string): Promise<void>;
   countActiveAdmins(): Promise<number>;

@@ -87,6 +87,8 @@ export class PageController {
     private readonly templates: TemplateService,
     private readonly pagePublicBaseUrl: string,
     private readonly publications: PublicationService,
+    /** Origin of the admin panel: the only other site allowed to show the preview in a frame. */
+    private readonly panelOrigin: string,
   ) {}
 
   list = async (req: Request, res: Response) => {
@@ -217,7 +219,7 @@ export class PageController {
         'font-src data:',
         "base-uri 'none'",
         "form-action 'none'",
-        "frame-ancestors 'self'", // only the panel itself may frame the preview
+        `frame-ancestors 'self' ${this.panelOrigin}`, // only the panel may frame the preview
       ].join('; '),
       'X-Robots-Tag': 'noindex, nofollow',
     });

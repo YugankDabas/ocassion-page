@@ -74,7 +74,7 @@ function UserModal({ user, onClose }: { user: User | null; onClose: () => void }
         ? { name, role, isActive, ...(password ? { password } : {}) }
         : { name, email, role, password };
       await save.mutateAsync({ id: user?.id, input });
-      toast.success(user ? 'User updated' : 'User created — share the password securely (not over chat/email in plain text)');
+      toast.success(user ? 'User updated' : 'User invited. Share the temporary password securely; they must change it at first sign-in.');
       onClose();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -108,7 +108,7 @@ function UserModal({ user, onClose }: { user: User | null; onClose: () => void }
           autoComplete="new-password"
           value={password}
           onChange={setPassword}
-          hint="At least 12 characters with letters and numbers. Changing it signs the user out everywhere."
+          hint="At least 12 characters with letters and numbers. The user is signed out everywhere and must choose their own password at the next sign-in."
         />
         {user && <Toggle label="Account active" checked={isActive} onChange={setIsActive} />}
       </div>

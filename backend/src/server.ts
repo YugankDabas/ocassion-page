@@ -1,9 +1,11 @@
 import { createApp } from './app';
+import { bootstrap } from './bootstrap';
 import { loadEnv } from './config/env';
 import { runMigrations } from './config/migrate';
 import { loadSecretsIntoEnv } from './config/secrets';
 import { createContainer } from './container';
 import { createLogger } from './lib/logger';
+import { BcryptPasswordHasher } from './services/security';
 
 async function main() {
   await loadSecretsIntoEnv(); // AWS Secrets Manager → process.env (locally: .env only), then DB_* → database URL
@@ -12,6 +14,8 @@ async function main() {
   const logger = createLogger(env.LOG_LEVEL, !env.isProduction);
   const container = createContainer(env, logger);
   await container.prisma.$connect();
+  // New database: occasions, default site settings and the first administrator. Does nothing afterwards.
+  await bootstrap(container.prisma, env.PAGE_PUBLIC_BASE_URL, new BcryptPasswordHasher(), logger);
 
   const app = createApp(container);
   const server = app.listen(env.PORT, () => {

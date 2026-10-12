@@ -20,6 +20,43 @@ import { SETTING_KEYS } from './env';
 
 const KNOWN_KEYS = new Set<string>([...SETTING_KEYS, ...DB_KEYS]);
 
+/** The secret was fetched but its content is unusable: retrying will not help. */
+class SecretFormatError extends Error {}
+
+/**
+ * Reads the secret's text. It should be a JSON object: {"DB_HOST": "…", "DB_NAME": "…"}.
+ *
+ * A secret typed by hand in the console's "Plaintext" tab is often almost JSON, with a value left
+ * unquoted ("DB_NAME": occasion_admin) or written as KEY=value lines. Rather than refusing to
+ * start, such a secret is read line by line and a warning says how to fix it. Exported for tests.
+ */
+export function parseSecret(text: string): { values: Record<string, unknown>; lenient: boolean } {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return { values: parsed as Record<string, unknown>, lenient: false };
+  } catch {
+    // fall through to the line-by-line reading
+  }
+  const values: Record<string, unknown> = {};
+  // KEY, then ":" or "=", then a "double-quoted", 'single-quoted' or bare value (bare = up to the next comma or line end).
+  const entry = /"?([A-Za-z_][A-Za-z0-9_]*)"?[ \t]*[:=][ \t]*("(?:[^"\\]|\\.)*"|'[^']*'|[^,\r\n}]*)/g;
+  for (const [, key = '', raw = ''] of text.matchAll(entry)) {
+    let value: unknown = raw.trim();
+    if (raw.startsWith('"')) {
+      try {
+        value = JSON.parse(raw);
+      } catch {
+        value = raw.slice(1, -1);
+      }
+    } else if (raw.startsWith("'")) value = raw.slice(1, -1);
+    values[key] = value;
+  }
+  if (Object.keys(values).length === 0) {
+    throw new SecretFormatError('the secret is not a JSON object. Store it as key/value pairs, e.g. {"DB_HOST": "…", "DB_NAME": "occasion_admin"}');
+  }
+  return { values, lenient: true };
+}
+
 /** Copies the known settings of a secret into `env`. Exported for tests. */
 export function applySecret(secret: Record<string, unknown>, env: NodeJS.ProcessEnv): void {
   const present = new Set(
@@ -45,12 +82,17 @@ export async function loadSecretsIntoEnv(env: NodeJS.ProcessEnv = process.env, a
     for (let attempt = 1; ; attempt++) {
       try {
         const res = await client.send(new GetSecretValueCommand({ SecretId: secretName }));
-        const secret: unknown = JSON.parse(res.SecretString ?? '{}');
-        if (!secret || typeof secret !== 'object' || Array.isArray(secret)) throw new Error('the secret is not a JSON object of key/value pairs');
-        applySecret(secret as Record<string, unknown>, env);
+        const { values, lenient } = parseSecret(res.SecretString ?? '');
+        if (lenient) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `WARNING: secret "${secretName}" is not valid JSON and was read leniently. Fix it in Secrets Manager: every value must be in double quotes, e.g. "DB_NAME": "occasion_admin" (use the Key/value tab).`,
+          );
+        }
+        applySecret(values, env);
         break;
       } catch (err) {
-        if (attempt >= attempts) throw new Error(`Could not read secret "${secretName}" from AWS Secrets Manager: ${(err as Error).message}`);
+        if (err instanceof SecretFormatError || attempt >= attempts) throw new Error(`Could not read secret "${secretName}" from AWS Secrets Manager: ${(err as Error).message}`);
         await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
       }
     }

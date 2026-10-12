@@ -60,4 +60,6 @@ export interface SessionUser {
   email: string;
   name: string;
   role: Role;
+  /** True while the password is one the user was given: only changing it is allowed. */
+  mustChangePassword: boolean;
 }

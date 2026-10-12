@@ -42,7 +42,7 @@ diwali-gifts-admin/
 - **Brand library** – logo, discount, voucher URL, category; CSV import. (A sync from GyFTR's brand API is planned.)
 - **Media library** – uploads are re-encoded to WebP, stripped of metadata and resized. Stored in S3 when deployed.
 - **Workflow** – drafts vs published, optimistic locking, version history with restore, templates, audit log.
-- **Roles** – `ADMIN`, `PUBLISHER` (publish, brands, templates), `EDITOR` (drafts and media).
+- **Roles** – `ADMIN`, `PUBLISHER` (publish, brands, templates), `EDITOR` (drafts and media). Users are invite-only.
 
 ## Integration with gyftr.com (database contract)
 
@@ -64,9 +64,7 @@ cd backend
 cp .env.example .env        # fill in the "Local development only" block
 npm install
 npm run db:deploy           # applies prisma/migrations
-npm run db:seed             # occasions + default header/footer
-ADMIN_EMAIL=you@gyftr.net ADMIN_PASSWORD='a-strong-password-123' npm run admin:create
-npm run dev                 # http://localhost:4000
+npm run dev                 # http://localhost:4000 (a new database is prepared at start-up, see "First sign-in")
 ```
 
 ```bash
@@ -81,6 +79,19 @@ PostgreSQL when `TEST_DATABASE_URL` names a throwaway database ending in `_test`
 
 The content contracts live in `backend/src/contracts` (source of truth). `frontend/src/contracts` is a
 synced copy (`npm run sync:contracts`, run automatically before `dev` and `build`).
+
+## First sign-in and users
+
+There is no sign-up page and no set-up script.
+
+- **First administrator.** When the application starts on a database with no users, it creates one
+  administrator (`backend/src/bootstrap.ts`: email and default password). At the first sign-in the panel shows
+  only a "Set your password" screen, and the API refuses every other request until the password is changed
+  (12+ characters, letters and digits, different from the default). After that the default password no longer works.
+- **Everyone else is invited.** An administrator adds users on the Users screen with a role and a temporary
+  password. An invited user, or one whose password an administrator resets, must also choose their own password
+  at the next sign-in.
+- The same start-up step creates the occasions and default header / footer settings on a new database.
 
 ## Configuration
 
@@ -197,9 +208,11 @@ The frontend image is built with `VITE_API_BASE_URL=https://api-occasion-admin.g
 
 The backend needs RDS PostgreSQL 15+ and an S3 media bucket with public object reads. Its task role needs
 `s3:PutObject` / `s3:DeleteObject` on that bucket and `secretsmanager:GetSecretValue` on the backend secret.
-On first deploy, run one-off backend tasks: `node dist/seed.js`, then `node dist/create-admin.js` with
-`ADMIN_EMAIL` / `ADMIN_PASSWORD` passed as overrides (never stored). The gyftr.com backend also needs
-`SELECT` on `integration.published_pages` over the network path DevOps allows.
+The database only has to exist and be empty: the backend creates the schema at start-up (its database user needs
+rights to create tables). No one-off tasks are needed: the first start also creates the occasions, the default
+settings and the first administrator (see "First sign-in and users"); sign in and change the default password
+immediately after the first deploy. The gyftr.com backend also needs `SELECT` on `integration.published_pages`
+over the network path DevOps allows.
 
 Rollback = redeploy the previous image.
 
@@ -207,7 +220,7 @@ Rollback = redeploy the previous image.
 
 - Sessions: short-lived JWT in an `httpOnly`, `Secure`, `SameSite=Strict` cookie; revoked on password change.
 - CSRF token on every state-changing request; RBAC on every route; full audit log.
-- Passwords: bcrypt, 12+ characters; login rate-limited.
+- Passwords: bcrypt, 12+ characters; login rate-limited. A password set by someone else must be changed at first sign-in.
 - All input validated with zod; rich text sanitised with an allow-list on save and again on render.
 - Uploads re-encoded by sharp (no SVG, size / pixel limits), random keys.
 - gyftr.com integration: read access to one database view; No public HTTP endpoint is exposed for it.
