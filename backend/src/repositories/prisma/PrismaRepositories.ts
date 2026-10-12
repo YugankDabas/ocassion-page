@@ -32,13 +32,13 @@ export class PrismaUserRepository implements IUserRepository {
     return this.db.user.findMany({ orderBy: { createdAt: 'asc' } });
   }
 
-  create(data: { email: string; name: string; role: UserRecord['role']; passwordHash: string }): Promise<UserRecord> {
+  create(data: { email: string; name: string; role: UserRecord['role']; passwordHash: string; mustChangePassword: boolean }): Promise<UserRecord> {
     return this.db.user.create({ data: { ...data, email: data.email.toLowerCase() } });
   }
 
   update(
     id: string,
-    data: Partial<Pick<UserRecord, 'name' | 'role' | 'isActive' | 'passwordHash'>> & { bumpTokenVersion?: boolean },
+    data: Partial<Pick<UserRecord, 'name' | 'role' | 'isActive' | 'passwordHash' | 'mustChangePassword'>> & { bumpTokenVersion?: boolean },
   ): Promise<UserRecord> {
     const { bumpTokenVersion, ...rest } = data;
     return this.db.user.update({

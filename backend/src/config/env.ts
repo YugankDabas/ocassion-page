@@ -16,8 +16,12 @@ const settings = z.object({
 
   /** Assembled at start-up from DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD (config/database.ts). */
   DATABASE_URL: z.string({ required_error: 'Set DB_HOST, DB_NAME, DB_USER and DB_PASSWORD' }).url(),
-  /** Apply pending database migrations when the server starts (safe with several instances: Prisma takes a lock). */
-  RUN_MIGRATIONS_ON_START: bool.default('false'),
+  /**
+   * Create / update the database schema when the server starts, by applying prisma/migrations.
+   * On by default, so an empty database only has to exist. Safe with several containers (Prisma
+   * takes a lock) and a no-op when the schema is current. Set to false to manage migrations yourself.
+   */
+  RUN_MIGRATIONS_ON_START: bool.default('true'),
 
   JWT_SECRET: secret('JWT_SECRET'),
   SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(72).default(8),

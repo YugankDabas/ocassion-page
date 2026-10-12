@@ -108,7 +108,7 @@ Images are **not** stored in the database. They are in S3; the database holds th
 
 | Table | What it stores | Important fields |
 | --- | --- | --- |
-| `User` | People who can log in to the panel | `email` (unique), `passwordHash` (bcrypt), `role` (ADMIN / PUBLISHER / EDITOR), `isActive`, `tokenVersion` (bump = all sessions revoked), `lastLoginAt` |
+| `User` | People who can log in to the panel | `email` (unique), `passwordHash` (bcrypt), `role` (ADMIN / PUBLISHER / EDITOR), `isActive`, `mustChangePassword` (password was given by someone else; must be changed at next sign-in), `tokenVersion` (bump = all sessions revoked), `lastLoginAt` |
 | `Occasion` | The occasions (Diwali, Holi, …) | `slug`, `name`, `shortName`, `recipients`, `emoji` (used in template text), `pageUrl`, `theme` (default colours), `sortOrder`, `isActive` |
 | `Page` | One page being built | `slug`, `title`, `occasionId`, `status` (DRAFT / PUBLISHED / ARCHIVED), `draft` (JSON being edited), `draftVersion` (optimistic lock), `published` (JSON snapshot taken at publish), `publishedSlug`, `publishedVersion`, `publishedAt`, who created / updated / published |
 | `PageRevision` | History, for restore | `pageId`, `version`, `kind` (SAVE / PUBLISH / RESTORE), `content`, `note` |
@@ -222,20 +222,19 @@ All database access is in `src/repositories/`. No other file runs a query.
 | --- | --- |
 | `prisma/schema.prisma` | The 10 tables and their columns. |
 | `prisma/migrations/…_init/migration.sql` | SQL that creates the tables and the view. |
-| `prisma/seed.ts` | Inserts the 37 occasions and default header / footer settings on a new database. |
-| `scripts/create-admin.ts` | Creates the first admin user from `ADMIN_EMAIL` / `ADMIN_PASSWORD`. |
+| `prisma/migrations/…_user_must_change_password/migration.sql` | Adds `User.mustChangePassword`. |
 | `assets/render/` | `page.css` (the page stylesheet) and the GyFTR logos used in preview / download. |
-| **`src/server.ts`** | Entry point: read Secrets Manager, build the database connection, validate settings, run migrations, start the server. |
+| **`src/server.ts`** | Entry point: read Secrets Manager, build the database connection, validate settings, run migrations, prepare a new database, start the server. |
+| **`src/bootstrap.ts`** | Runs at every start-up; on a new database it creates the 37 occasions, the default header / footer settings and the first administrator. Does nothing once they exist. |
 | `src/app.ts` | The Express app: logging, security headers, `/healthz`, `/api/v1`, serves the panel. |
 | `src/container.ts` | Wires repositories, services and controllers together. |
-| `src/entry/` | Deployed versions of the seed and create-admin commands (they read Secrets Manager first). |
 | **`src/config/secrets.ts`** | Reads the Secrets Manager secret into the environment. |
 | **`src/config/database.ts`** | Builds the database connection from `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`. |
 | `src/config/env.ts` | The list of settings, validated at start-up. |
 | `src/config/migrate.ts` | Runs `prisma migrate deploy` at start-up. |
 | `src/http/routes.ts` | Every URL the panel calls and the permission each needs. |
 | `src/http/controllers.ts` | Reads the request, validates it, calls a service, sends the response. |
-| `src/http/middleware.ts` | Login check, CSRF check, role check, rate limits, upload limits, error responses. |
+| `src/http/middleware.ts` | Login check, CSRF check, forced password change, role check, rate limits, upload limits, error responses. |
 | **`src/services/PublicationService.ts`** | Publish, unpublish, re-render on brand change, preview, download. |
 | `src/services/PageService.ts` | Create page, save draft, version check, revisions, URL rules. |
 | `src/services/PagePayloadService.ts` | Collects what a render needs: page content, its brands, site settings. |
@@ -277,7 +276,6 @@ Manager secret; the container is told only the secret's name.
 | `NODE_ENV` | `production` |
 | `PORT` | `4000` |
 | `SERVE_FRONTEND_DIR` | Path of the built panel inside the image |
-| `RUN_MIGRATIONS_ON_START` | `true` |
 
 ### 8.2 In the Secrets Manager secret
 
@@ -308,8 +306,10 @@ Manager secret; the container is told only the secret's name.
 2. The known keys are copied into the environment; the database connection is built from the `DB_*` fields.
 3. Every setting is validated. A missing or malformed value stops the start-up with a message naming it,
    for example `Database configuration is incomplete. Missing: DB_PASSWORD`.
-4. Pending database migrations are applied.
-5. The server starts and re-checks the published pages once.
+4. The database schema is created or updated by applying `prisma/migrations` (on by default; an empty
+   database only has to exist).
+5. A new database is prepared: occasions, default site settings, the first administrator (section 9.1).
+6. The server starts and re-checks the published pages once.
 
 ### 8.4 Optional settings (defaults)
 
@@ -327,19 +327,37 @@ The Dockerfile and pipeline are not in this repository. What the application nee
 - **Build**: `cd frontend && npm ci && npm run build`, then `cd backend && npm ci && npm run build`.
 - **Runtime image**: `backend/dist`, `backend/node_modules` (production), `backend/prisma`, `backend/assets`,
   `backend/package.json`, and `frontend/dist`. Start with `node dist/server.js` from the backend folder.
-- **RDS PostgreSQL 15+**, reachable from the service.
+- **RDS PostgreSQL 15+** with an empty database, reachable from the service. The application creates the
+  schema itself at start-up; its database user needs rights to create tables.
 - **S3 bucket** with public read on objects; task role with `s3:PutObject`, `s3:DeleteObject` on it and
   `secretsmanager:GetSecretValue` on the secret.
 - **ECS service** behind an ALB on a restricted admin host. Health check: `GET /healthz`.
-- **First deploy only** (one-off tasks): `node dist/seed.js`, then `node dist/create-admin.js` with
-  `ADMIN_EMAIL` / `ADMIN_PASSWORD` passed as overrides.
+- **No one-off tasks or scripts.** The first start prepares the database (section 9.1).
 - **gyftr.com backend access**: `SELECT` on `integration.published_pages`, over a network path DevOps allows.
+
+### 9.1 First sign-in and users
+
+There is no sign-up page and no set-up script.
+
+1. On a database with no users, start-up creates **one administrator** with a default password
+   (email and password are in `backend/src/bootstrap.ts`). Only its bcrypt hash is stored.
+2. At the first sign-in the panel shows only a "Set your password" screen. The API enforces it as well:
+   until the password is changed, every request except the account endpoints is answered with 403.
+3. The new password must have 12+ characters with letters and digits and differ from the default. Once it
+   is changed, the default password no longer works and is never restored on later starts.
+4. **Everyone else is invited**: an administrator adds users on the Users screen with a role and a temporary
+   password. An invited user, or one whose password an administrator resets, must also choose their own
+   password at the next sign-in.
+
+Change the default password immediately after the first deploy: until then, anyone who can reach the admin
+host and knows the default can take the administrator account. Keeping the admin host restricted (VPN / IP
+allow-list) is what protects that window.
 
 ## 10. Security
 
 - Sessions: JWT in an `httpOnly`, `Secure`, `SameSite=Strict` cookie; revoked on password change.
 - CSRF token on every state-changing request; a role check on every route; an audit log.
-- Passwords: bcrypt, 12+ characters; login is rate-limited.
+- Passwords: bcrypt, 12+ characters; login is rate-limited; a given password must be changed at first sign-in.
 - Every input is validated; rich text is sanitised on save and again on render.
 - Uploads are re-encoded (no SVG), size-limited, stored under random keys.
 - Preview pages are served sandboxed: no access to the panel, its cookies or the API.

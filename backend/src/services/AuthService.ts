@@ -5,7 +5,7 @@ import type { AuditService } from './AuditService';
 import type { IPasswordHasher, SessionTokenService } from './security';
 
 export function toSessionUser(u: UserRecord): SessionUser {
-  return { id: u.id, email: u.email, name: u.name, role: u.role };
+  return { id: u.id, email: u.email, name: u.name, role: u.role, mustChangePassword: u.mustChangePassword };
 }
 
 export class AuthService {
@@ -57,7 +57,9 @@ export class AuthService {
     if (!(await this.hasher.verify(currentPassword, user.passwordHash))) {
       throw new ValidationError('Current password is incorrect');
     }
-    await this.users.update(userId, { passwordHash: await this.hasher.hash(newPassword), bumpTokenVersion: true });
+    if (newPassword === currentPassword) throw new ValidationError('The new password must be different from the current one');
+    // The password is now the user's own: the account is fully usable. Every existing session ends.
+    await this.users.update(userId, { passwordHash: await this.hasher.hash(newPassword), mustChangePassword: false, bumpTokenVersion: true });
     await this.audit.record({ id: userId, ip }, { action: 'auth.password_changed', entityType: 'user', entityId: userId });
   }
 

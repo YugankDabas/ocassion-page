@@ -43,6 +43,9 @@ model User {
   passwordHash String
   role         Role      @default(EDITOR)
   isActive     Boolean   @default(true)
+  /// The password was set by someone else (the default first administrator, or an administrator
+  /// inviting / resetting a user). Until the user changes it, the account can do nothing else.
+  mustChangePassword Boolean @default(false)
   /// Bumped on password change / deactivation to revoke every issued session token.
   tokenVersion Int       @default(0)
   lastLoginAt  DateTime?

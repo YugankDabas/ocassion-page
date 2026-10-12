@@ -1,6 +1,6 @@
 import type { Role, SessionUser } from '../contracts';
 import { BadRequestError, ConflictError, NotFoundError } from '../lib/errors';
-import type { IUserRepository } from '../repositories/types';
+import type { IUserRepository, UserRecord } from '../repositories/types';
 import type { Actor, AuditService } from './AuditService';
 import type { IPasswordHasher } from './security';
 
@@ -10,6 +10,11 @@ export interface UserView extends SessionUser {
   createdAt: Date;
 }
 
+const toView = ({ id, email, name, role, mustChangePassword, isActive, lastLoginAt, createdAt }: UserRecord): UserView => ({
+  id, email, name, role, mustChangePassword, isActive, lastLoginAt, createdAt,
+});
+
+/** Users are invite-only: an administrator creates each account. There is no sign-up. */
 export class UserService {
   constructor(
     private readonly users: IUserRepository,
@@ -18,10 +23,7 @@ export class UserService {
   ) {}
 
   async list(): Promise<UserView[]> {
-    const rows = await this.users.list();
-    return rows.map(({ id, email, name, role, isActive, lastLoginAt, createdAt }) => ({
-      id, email, name, role, isActive, lastLoginAt, createdAt,
-    }));
+    return (await this.users.list()).map(toView);
   }
 
   async create(actor: Actor, input: { email: string; name: string; role: Role; password: string }): Promise<UserView> {
@@ -31,10 +33,10 @@ export class UserService {
       name: input.name,
       role: input.role,
       passwordHash: await this.hasher.hash(input.password),
+      mustChangePassword: true, // the invited user chooses their own password at first sign-in
     });
     await this.audit.record(actor, { action: 'user.create', entityType: 'user', entityId: user.id, metadata: { role: user.role } });
-    const { id, email, name, role, isActive, lastLoginAt, createdAt } = user;
-    return { id, email, name, role, isActive, lastLoginAt, createdAt };
+    return toView(user);
   }
 
   async update(
@@ -57,7 +59,8 @@ export class UserService {
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.role !== undefined ? { role: input.role } : {}),
       ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
-      ...(input.password !== undefined ? { passwordHash: await this.hasher.hash(input.password) } : {}),
+      // A password set for someone else is temporary: they must replace it at their next sign-in.
+      ...(input.password !== undefined ? { passwordHash: await this.hasher.hash(input.password), mustChangePassword: actor.id !== userId } : {}),
       bumpTokenVersion: securityChange,
     });
     await this.audit.record(actor, {
@@ -66,7 +69,6 @@ export class UserService {
       entityId: userId,
       metadata: { fields: Object.keys(input).filter((k) => k !== 'password'), passwordReset: input.password !== undefined },
     });
-    const { id, email, name, role, isActive, lastLoginAt, createdAt } = user;
-    return { id, email, name, role, isActive, lastLoginAt, createdAt };
+    return toView(user);
   }
 }

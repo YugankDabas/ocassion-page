@@ -1,3 +1,4 @@
+import { ForcePasswordChangePage } from '../features/auth/ForcePasswordChangePage';
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router';
 import logoWhite from '../assets/gyftr-logo-white.png';
 import type { Permission } from '../contracts';
@@ -20,6 +21,8 @@ export function ProtectedLayout() {
   const location = useLocation();
   if (loading) return <Spinner />;
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  // A given password (first administrator, invitation, reset) must be replaced before anything else.
+  if (user.mustChangePassword) return <ForcePasswordChangePage />;
 
   // The page editor needs the full width; it has its own "← Pages" navigation.
   const fullscreen = /^\/pages\/[^/]+$/.test(location.pathname);
