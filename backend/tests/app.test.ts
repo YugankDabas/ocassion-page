@@ -81,7 +81,12 @@ describe('reason shown by the health check', () => {
     expect(databaseFailureReason('Error: P1011: Error opening a TLS connection: self-signed certificate in certificate chain')).toBe('tls_error (P1011)');
     expect(databaseFailureReason('ERROR: permission denied for schema public')).toBe('permission_denied');
     expect(databaseFailureReason('P1003: Database `occasion-admin` does not exist')).toBe('database_does_not_exist (P1003)');
-    expect(databaseFailureReason('Error loading shared library libssl.so.3: No such file or directory')).toBe('migration_tool_cannot_run');
+    expect(databaseFailureReason('connect ETIMEDOUT 10.0.3.14:5432')).toBe('cannot_reach_database_server');
+    expect(databaseFailureReason('Connection terminated due to connection timeout')).toBe('cannot_reach_database_server');
+    expect(databaseFailureReason('password authentication failed for user "occasion"')).toBe('wrong_user_or_password');
+    expect(databaseFailureReason('no pg_hba.conf entry for host "10.0.1.5", user "occasion", database "occasion-admin", no encryption')).toBe('connection_rejected_by_database_server');
+    expect(databaseFailureReason('database "occasion-admin" does not exist and could not be created: permission denied to create database')).toBe('permission_denied');
+    expect(databaseFailureReason('self-signed certificate in certificate chain')).toBe('tls_error');
     expect(databaseFailureReason('something unexpected with password=hunter2')).toBe('other');
     expect(databaseFailureReason('Database migration failed: Error: ERROR: permission denied to create database')).toBe('permission_denied');
     expect(databaseFailureReason('Error: P3009 migrate found failed migrations in the target database')).toBe('migration_failed (P3009)');

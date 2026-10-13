@@ -5,7 +5,7 @@ publishing them to gyftr.com without a code deploy.
 
 ```
 diwali-gifts-admin/
-├── backend/    Express + TypeScript + Prisma (PostgreSQL). REST API and page renderer
+├── backend/    Express + TypeScript + Prisma over the pg driver (PostgreSQL). REST API and page renderer
 ├── frontend/   React + Vite admin panel (drag-and-drop page builder)
 └── docs/       OCCASION_PAGE_BUILDER.md — the complete guide (start here)
                 INTEGRATION_DATABASE.md  — the contract for the gyftr.com team

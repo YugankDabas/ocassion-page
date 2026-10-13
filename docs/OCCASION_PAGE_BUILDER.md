@@ -233,7 +233,8 @@ All database access is in `src/repositories/`. No other file runs a query.
 | **`src/config/secrets.ts`** | Reads the Secrets Manager secret into the environment. |
 | **`src/config/database.ts`** | Builds the database connection from `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`. |
 | `src/config/env.ts` | The list of settings, validated at start-up. |
-| `src/config/migrate.ts` | Runs `prisma migrate deploy` at start-up. |
+| **`src/db.ts`** | The database connection: the plain `pg` driver (as in the other GyFTR panels) with Prisma on top for typed queries. TLS for RDS, at most 10 connections. No native database engine. |
+| `src/config/migrate.ts` | Creates / updates the schema at start-up by running the SQL files in `prisma/migrations` once each, over the same `pg` driver. No command-line tool is involved. |
 | `src/http/routes.ts` | Every URL the panel calls and the permission each needs. |
 | `src/http/controllers.ts` | Reads the request, validates it, calls a service, sends the response. |
 | `src/http/middleware.ts` | Login check, CSRF check, forced password change, role check, rate limits, upload limits, error responses. |
@@ -301,8 +302,9 @@ Manager secret; the container is told only the secret's name.
   `"DB_NAME": occasion_admin`, is still read, with a warning in the log asking to fix it.)
 - Key names are not case-sensitive (`db_host` = `DB_HOST`). Keys the application does not know are ignored.
 - `DB_HOST` is the host name only: no `postgresql://`, no port.
-- The database connection is built in memory at start-up: always encrypted (TLS), at most 10 connections per
-  container. The RDS certificate is not checked against a certificate authority, as with PostgreSQL's own `sslmode=require`.
+- The database connection is built in memory at start-up and made with the plain `pg` driver: always encrypted
+  (TLS) for a remote database, at most 10 connections per container. The RDS certificate chain is not verified
+  (`rejectUnauthorized: false`), the same as in the other GyFTR panels.
 - `JWT_SECRET` must be at least 32 characters and different in staging and production.
 - `S3_BUCKET` is the bucket name only: no `s3://`, no dots. The region is `AWS_REGION`. Images are served
   from `https://<bucket>.s3.<region>.amazonaws.com`, so the bucket must allow public reads of its objects.
@@ -316,7 +318,8 @@ It repeats these steps every 15 seconds until all succeed, so fixing the cause i
 1. `AWS_SECRET_NAME` is read and the secret is fetched from Secrets Manager (read again on every attempt).
 2. The known keys are copied into the environment; the database connection is built from the `DB_*` fields.
 3. Every setting is validated.
-4. The database schema is created or updated (`prisma/migrations`). This needs the right to create tables in
+4. The database schema is created or updated: the application runs the SQL files in `prisma/migrations`
+   itself, each once, in a transaction (no separate tool or step). This needs the right to create tables in
    schema `public`:  `GRANT USAGE, CREATE ON SCHEMA public TO "<DB_USER>";`  (on PostgreSQL 15+,
    `GRANT ALL ON DATABASE` does not include it). A failed earlier attempt is retried automatically.
 5. A new database is prepared: occasions, default site settings, the first administrator (section 9.1).

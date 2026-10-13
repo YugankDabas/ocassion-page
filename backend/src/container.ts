@@ -1,5 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import { isBucketName, type Env } from './config/env';
+import { createPrismaClient } from './db';
 import { PageUrlPolicy } from './domain/pages/PageUrlPolicy';
 import { SectionRegistry } from './domain/sections/SectionRegistry';
 import { TemplateFactory } from './domain/templates/TemplateFactory';
@@ -43,7 +43,7 @@ import { LocalDiskStorage, S3Storage, UnavailableStorage, type IStorageProvider 
  * Composition root: the only place that knows concrete implementations.
  * Everything else receives its collaborators through constructors.
  */
-export function createContainer(env: Env, logger: Logger, prisma = new PrismaClient()) {
+export function createContainer(env: Env, logger: Logger, prisma = createPrismaClient(env.DATABASE_URL)) {
   const repos = {
     users: new PrismaUserRepository(prisma),
     occasions: new PrismaOccasionRepository(prisma),

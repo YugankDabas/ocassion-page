@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { applyDatabaseUrl, describeDatabaseTarget, placeholderDatabaseSettings } from '../src/config/database';
 import { configurationProblems, loadEnv } from '../src/config/env';
+import { poolConfig } from '../src/db';
 import { applySecret, fetchSecret, keysFromSecret, loadSecretsIntoEnv, parseSecret } from '../src/config/secrets';
 
 const secretsManager = vi.hoisted(() => ({ send: vi.fn() }));
@@ -49,6 +50,28 @@ describe('database settings', () => {
     const env: NodeJS.ProcessEnv = { DATABASE_URL: 'postgresql://postgres:x@localhost:5432/occasion_admin', DB_HOST: 'ignored' };
     applyDatabaseUrl(env);
     expect(env.DATABASE_URL).toBe('postgresql://postgres:x@localhost:5432/occasion_admin');
+  });
+});
+
+describe('connection settings for the pg driver', () => {
+  it('uses TLS for a remote database without checking the certificate chain, and caps the pool', () => {
+    const env: NodeJS.ProcessEnv = { DB_HOST: 'db.abc.ap-south-1.rds.amazonaws.com', DB_NAME: 'occasion-admin', DB_USER: 'occasion', DB_PASSWORD: 'p@ss:w/rd?#&% +' };
+    applyDatabaseUrl(env);
+    expect(poolConfig(env.DATABASE_URL!)).toMatchObject({
+      host: 'db.abc.ap-south-1.rds.amazonaws.com',
+      port: 5432,
+      database: 'occasion-admin',
+      user: 'occasion',
+      password: 'p@ss:w/rd?#&% +', // exactly as typed in the secret
+      ssl: { rejectUnauthorized: false },
+      max: 10,
+    });
+  });
+
+  it('goes without TLS only for a database on this machine', () => {
+    expect(poolConfig('postgresql://postgres:x@localhost:5432/occasion_admin').ssl).toBe(false);
+    expect(poolConfig('postgresql://u:p@10.0.0.5/db').ssl).toEqual({ rejectUnauthorized: false });
+    expect(poolConfig('postgresql://u:p@10.0.0.5/db?sslmode=disable').ssl).toBe(false);
   });
 });
 

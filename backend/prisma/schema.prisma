@@ -4,7 +4,10 @@
 // when, which brand) lives in proper columns.
 
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
+  // No native query engine: queries go through the plain "pg" driver (src/db.ts), so the
+  // application needs nothing from the operating system beyond Node itself.
+  engineType = "client"
 }
 
 datasource db {

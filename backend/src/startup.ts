@@ -61,13 +61,14 @@ export function databaseFailureReason(message: string): string {
   const code = /\bP\d{4}\b/.exec(message)?.[0];
   const category =
     /template placeholder/i.test(message) ? `placeholder_value_in ${(message.split(': ').pop() ?? '').replace(/[^A-Z_, ]/g, '')}`
-    : /P1001|P1002|P1008|Can't reach database server|timed out|ETIMEDOUT|ECONNREFUSED|ENOTFOUND|EAI_AGAIN/i.test(message) ? 'cannot_reach_database_server'
+    : /P1001|P1002|P1008|Can't reach database server|timed out|timeout|Connection terminated|ETIMEDOUT|ECONNREFUSED|ECONNRESET|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN/i.test(message) ? 'cannot_reach_database_server'
     : /P1000|authentication failed|password authentication/i.test(message) ? 'wrong_user_or_password'
+    : /pg_hba\.conf/i.test(message) ? 'connection_rejected_by_database_server'
     : /P1011|\bTLS\b|\bSSL\b|certificate/i.test(message) ? 'tls_error'
     : /P1010|permission denied|must be owner|denied access/i.test(message) ? 'permission_denied'
     : /P1003|database .* does not exist/i.test(message) ? 'database_does_not_exist'
     : /P3009|P3018|failed migrations|migration.*failed to apply/i.test(message) ? 'migration_failed'
-    : /Query engine|schema engine|libssl|openssl|ENOENT|EACCES|spawn|Cannot find module/i.test(message) ? 'migration_tool_cannot_run'
+    : /ENOENT|EACCES|Cannot find module/i.test(message) ? 'migration_files_missing'
     : /Database configuration is incomplete/i.test(message) ? 'database_settings_missing'
     : 'other';
   return code ? `${category} (${code})` : category;
@@ -83,8 +84,9 @@ function databaseFix(reason: string, target: { database: string; user: string } 
     database_does_not_exist: `Create the database "${database}", or set DB_NAME to the name of the database that exists.`,
     permission_denied: `The user "${user}" may not create tables. Run as the database owner, connected to "${database}":  GRANT USAGE, CREATE ON SCHEMA public TO "${user}";   (on PostgreSQL 15 and newer, GRANT ALL ON DATABASE does not include this). If the message says "create database", the database "${database}" does not exist: create it or correct DB_NAME.`,
     tls_error: 'The encrypted connection to the database could not be set up. Send this error to the application developer.',
+    connection_rejected_by_database_server: 'The database server refuses this user from this address (pg_hba). Check DB_USER, and that the server accepts TLS connections from the backend.',
     migration_failed: 'A schema change failed. The start-up step retries it by itself; if this stays, send this error to the application developer.',
-    migration_tool_cannot_run: 'The schema tool could not start inside the container image. Send this error to the application developer.',
+    migration_files_missing: 'The folder prisma/migrations is missing from the container image (it must be at ./prisma/migrations next to dist).',
     database_settings_missing: 'Add the missing DB_* keys to the secret.',
   };
   const key = Object.keys(fixes).find((k) => reason.startsWith(k));
