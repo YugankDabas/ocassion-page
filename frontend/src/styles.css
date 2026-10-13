@@ -269,3 +269,10 @@ a.icon-btn { text-decoration: none; }
   .sidebar { position: static; height: auto; }
   .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
 }
+
+/* Password field with its show / hide button */
+.password-field { position: relative; }
+.password-field .input { padding-right: 40px; }
+.password-toggle { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); cursor: pointer; }
+.password-toggle:hover { color: inherit; background: rgba(0, 0, 0, 0.05); }
+.password-toggle:focus-visible { outline: 2px solid #93c5fd; }

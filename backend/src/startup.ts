@@ -1,12 +1,11 @@
 import type { RequestListener } from 'node:http';
 import { describeDatabaseTarget, isDerivedDatabaseUrl, isPlaceholderValue, readSetting } from './config/database';
-import { keysFromSecret, type SecretsReport } from './config/secrets';
+import type { SecretsReport } from './config/secrets';
 
 /**
  * What the service knows about its own start-up, and how it reports it on GET /healthz:
- *  - whether the Secrets Manager secret could be read, and which settings were found (names only, never values),
- *  - what is wrong, in words, while the service is not ready yet.
- * Error texts are shown only until the service is ready, with passwords and keys removed.
+ * whether the secret was read, which settings are missing (names only, never a value),
+ * and what is wrong, in words, with passwords and keys removed.
  */
 
 declare const __BUILD_TIME__: string | undefined;
@@ -14,7 +13,6 @@ declare const __BUILD_TIME__: string | undefined;
 export const BUILT_AT = typeof __BUILD_TIME__ === 'string' ? __BUILD_TIME__ : 'development';
 
 export interface StartupReport {
-  startedAt: string;
   /** Settings loaded, database schema applied and first-run data present: the API is serving requests. */
   ready: boolean;
   secretsManager: SecretsReport;
@@ -24,39 +22,26 @@ export interface StartupReport {
   warnings: string[];
   /** Why the database could not be prepared on the last attempt. */
   databaseError: string | null;
-  /** Why the view for gyftr.com (integration.published_pages) could not be created. Does not stop the panel. */
-  integrationViewError: string | null;
-  attempts: number;
-  lastAttemptAt: string | null;
+  /** Why the tech team's read-only login could not be set up. Does not affect the panel. */
+  techReaderError: string | null;
 }
 
 export const newStartupReport = (): StartupReport => ({
-  startedAt: new Date().toISOString(),
   ready: false,
   secretsManager: { used: false, secretName: null, fetched: false, validJson: null, keysRead: [], error: null },
   configurationError: null,
   warnings: [],
   databaseError: null,
-  integrationViewError: null,
-  attempts: 0,
-  lastAttemptAt: null,
+  techReaderError: null,
 });
 
 /** For code that builds the application outside the start-up sequence (tests). */
 export const readyReport = (): StartupReport => ({ ...newStartupReport(), ready: true });
 
-const REQUIRED = ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'JWT_SECRET', 'PAGE_PUBLIC_BASE_URL'] as const;
-const OPTIONAL: Record<string, string> = {
-  DB_PORT: 'optional, 5432 is used',
-  S3_BUCKET: 'optional, image upload is disabled until it is set',
-  ADMIN_FRONTEND_ORIGIN: 'optional, http://localhost:5173 is used',
-};
-const DB_FIELDS = new Set(['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']);
+const REQUIRED = ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'JWT_SECRET', 'PAGE_PUBLIC_BASE_URL'];
+const DB_FIELDS = new Set(['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']);
 
-/**
- * Turns a database start-up error into a short, non-sensitive category.
- * Only fixed words and Prisma's public error code (P1000…) are returned, never the message itself.
- */
+/** Turns a database start-up error into a short category, used to choose the advice shown with it. */
 export function databaseFailureReason(message: string): string {
   const code = /\bP\d{4}\b/.exec(message)?.[0];
   const category =
@@ -75,29 +60,28 @@ export function databaseFailureReason(message: string): string {
 }
 
 /** What to do about each kind of database failure, with the real user and database names filled in. */
-function databaseFix(reason: string, target: { database: string; user: string } | null): string {
+function databaseFix(reason: string, target: { database: string; user: string } | null): string | null {
   const user = target?.user ?? '<DB_USER>';
   const database = target?.database ?? '<DB_NAME>';
   const fixes: Record<string, string> = {
-    cannot_reach_database_server: 'Network: allow PostgreSQL (port 5432) from the backend ECS tasks in the RDS security group, and check DB_HOST and DB_PORT.',
-    wrong_user_or_password: 'Check DB_USER and DB_PASSWORD in the secret (the corrected secret is picked up automatically within 15 seconds).',
-    database_does_not_exist: `Create the database "${database}", or set DB_NAME to the name of the database that exists.`,
-    permission_denied: `The user "${user}" may not create tables. Run as the database owner, connected to "${database}":  GRANT USAGE, CREATE ON SCHEMA public TO "${user}";   (on PostgreSQL 15 and newer, GRANT ALL ON DATABASE does not include this). If the message says "create database", the database "${database}" does not exist: create it or correct DB_NAME.`,
-    tls_error: 'The encrypted connection to the database could not be set up. Send this error to the application developer.',
-    connection_rejected_by_database_server: 'The database server refuses this user from this address (pg_hba). Check DB_USER, and that the server accepts TLS connections from the backend.',
-    migration_failed: 'A schema change failed. The start-up step retries it by itself; if this stays, send this error to the application developer.',
-    migration_files_missing: 'The folder prisma/migrations is missing from the container image (it must be at ./prisma/migrations next to dist).',
-    database_settings_missing: 'Add the missing DB_* keys to the secret.',
+    cannot_reach_database_server: 'allow PostgreSQL (port 5432) from the backend ECS tasks in the RDS security group, and check DB_HOST and DB_PORT.',
+    wrong_user_or_password: 'check DB_USER and DB_PASSWORD in the secret (a corrected secret is picked up within 15 seconds).',
+    database_does_not_exist: `create the database "${database}", or set DB_NAME to the name of the database that exists.`,
+    permission_denied: `the user "${user}" may not create tables. Run as the database owner, connected to "${database}":  GRANT USAGE, CREATE ON SCHEMA public TO "${user}";`,
+    connection_rejected_by_database_server: 'the database server refuses this user from this address. Check DB_USER, and that the server accepts TLS connections from the backend.',
+    migration_files_missing: 'the folder prisma/migrations is missing from the container image (it must be at ./prisma/migrations next to dist).',
+    database_settings_missing: 'add the missing DB_* keys to the secret.',
+    placeholder_value_in: 'replace the placeholder values in the secret with the real ones.',
   };
   const key = Object.keys(fixes).find((k) => reason.startsWith(k));
-  return key ? fixes[key]! : reason.startsWith('placeholder_value_in') ? 'Replace the placeholder values in the secret with the real ones.' : 'See the error text.';
+  return key ? fixes[key]! : null;
 }
 
 /** An error text made safe to show: no password, no signing key, no credentials inside a connection URL. */
 export function redact(text: string, env: NodeJS.ProcessEnv = process.env): string {
   // eslint-disable-next-line no-control-regex
   let out = text.replace(/\u001b\[[0-9;]*m/g, '');
-  for (const key of ['DB_PASSWORD', 'JWT_SECRET']) {
+  for (const key of ['DB_PASSWORD', 'JWT_SECRET', 'TECH_READER_PASSWORD']) {
     const value = readSetting(env, key);
     if (!value || value.length < 4) continue;
     out = out.split(value).join('***').split(encodeURIComponent(value)).join('***');
@@ -106,33 +90,26 @@ export function redact(text: string, env: NodeJS.ProcessEnv = process.env): stri
   return out.length > 900 ? `${out.slice(0, 900)}…` : out;
 }
 
-/** For each setting: whether it is there and where it came from. Never its value. */
-function settingsStatus(env: NodeJS.ProcessEnv): { settings: Record<string, string>; missing: string[] } {
-  const fromSecret = keysFromSecret(env);
-  // Local development gives DATABASE_URL directly; the separate DB_* fields are then not used.
+/** Names of the required settings that are absent or still hold a template placeholder. Never a value. */
+function missingSettings(env: NodeJS.ProcessEnv): string[] {
+  // Local development gives DATABASE_URL directly; the separate DB_* fields are then not needed.
   const urlGiven = !!readSetting(env, 'DATABASE_URL') && !isDerivedDatabaseUrl(env);
-  const settings: Record<string, string> = {};
-  const missing: string[] = [];
-  for (const key of [...REQUIRED.slice(0, 1), 'DB_PORT', ...REQUIRED.slice(1), 'S3_BUCKET', 'ADMIN_FRONTEND_ORIGIN']) {
+  return REQUIRED.filter((key) => {
+    if (urlGiven && DB_FIELDS.has(key)) return false;
     const value = readSetting(env, key);
-    const required = (REQUIRED as readonly string[]).includes(key);
-    if (!value && urlGiven && DB_FIELDS.has(key)) settings[key] = 'not used (DATABASE_URL is given)';
-    else if (!value && required) {
-      settings[key] = 'MISSING';
-      missing.push(key);
-    } else if (!value) settings[key] = `not set (${OPTIONAL[key]})`;
-    else {
-      const source = fromSecret.has(key) ? 'from the secret' : 'from the environment';
-      settings[key] = isPlaceholderValue(value) ? `PLACEHOLDER, not a real value (${source})` : `set (${source})`;
-      if (isPlaceholderValue(value) && required) missing.push(key);
-    }
-  }
-  return { settings, missing };
+    return !value || isPlaceholderValue(value);
+  });
 }
 
-/** The body of GET /healthz. */
+/**
+ * The body of GET /healthz:
+ *   status    always "ok" (the process is up; this is what the load balancer checks)
+ *   database  ready | starting | unavailable | not_configured
+ *   builtAt   when the running build was made
+ *   secrets   whether the Secrets Manager secret was fetched, and which required settings are missing
+ *   errors    what is wrong, with what to do about it
+ */
 export function healthPayload(report: StartupReport, env: NodeJS.ProcessEnv = process.env) {
-  const { settings, missing } = settingsStatus(env);
   const { secretsManager } = report;
   const database = report.ready
     ? 'ready'
@@ -142,42 +119,35 @@ export function healthPayload(report: StartupReport, env: NodeJS.ProcessEnv = pr
         ? 'unavailable'
         : 'starting';
 
-  const target = describeDatabaseTarget(readSetting(env, 'DATABASE_URL') ?? '');
-  const reason = database === 'unavailable' ? databaseFailureReason(report.databaseError!) : null;
-  const warnings = [...report.warnings];
-  if (report.integrationViewError) {
-    warnings.push(
-      `The view for gyftr.com (integration.published_pages) could not be created; the panel itself is not affected. ${redact(report.integrationViewError, env)} To fix, run as the database owner:  GRANT CREATE ON DATABASE "${target?.database ?? '<DB_NAME>'}" TO "${target?.user ?? '<DB_USER>'}";  It is retried every minute.`,
-    );
-  }
-
   const errors: string[] = [];
-  if (!report.ready) {
-    if (secretsManager.error) errors.push(`Secrets Manager: ${redact(secretsManager.error, env)}`);
-    if (report.configurationError) errors.push(`Configuration: ${redact(report.configurationError, env)}`);
-    if (database === 'unavailable') errors.push(`Database: ${redact(report.databaseError!, env)}`);
+  if (secretsManager.error) errors.push(`Secrets Manager: ${redact(secretsManager.error, env)}`);
+  else if (secretsManager.validJson === false) errors.push('Secrets Manager: the secret is not valid JSON (it was still read). Put every value in double quotes.');
+  if (!report.ready && report.configurationError) errors.push(`Configuration: ${redact(report.configurationError, env)}`);
+  if (database === 'unavailable') {
+    const fix = databaseFix(databaseFailureReason(report.databaseError!), describeDatabaseTarget(readSetting(env, 'DATABASE_URL') ?? ''));
+    errors.push(`Database: ${redact(report.databaseError!, env)}${fix ? ` | Fix: ${fix}` : ''}`);
   }
+  if (report.techReaderError) {
+    const user = describeDatabaseTarget(readSetting(env, 'DATABASE_URL') ?? '')?.user ?? '<DB_USER>';
+    const fix = /permission denied to create role/i.test(report.techReaderError)
+      ? ` | Fix: the panel's database user may not create logins. Run as the database administrator:  ALTER ROLE "${user}" CREATEROLE;  The login is then created within a minute, and the right can be taken away again:  ALTER ROLE "${user}" NOCREATEROLE;`
+      : /may not (change it|set them)/i.test(report.techReaderError)
+        ? ' | Fix: see "How the login is created" in docs/INTEGRATION_DATABASE.md.'
+        : '';
+    errors.push(`Tech login: ${redact(report.techReaderError, env)}${fix}`);
+  }
+  errors.push(...report.warnings);
 
   return {
     status: 'ok',
     database,
-    ...(reason ? { reason, fix: databaseFix(reason, target) } : {}),
     builtAt: BUILT_AT,
-    startedAt: report.startedAt,
-    secretsManager: {
-      used: secretsManager.used,
-      secretName: secretsManager.secretName,
-      fetched: secretsManager.fetched,
-      validJson: secretsManager.validJson,
-      settingsReadFromSecret: secretsManager.keysRead,
+    secrets: {
+      source: secretsManager.used ? 'AWS Secrets Manager' : 'environment',
+      ...(secretsManager.used ? { fetched: secretsManager.fetched } : {}),
+      missing: missingSettings(env),
     },
-    settings,
-    allRequiredSettingsPresent: missing.length === 0,
-    integrationView: !report.ready ? 'pending' : report.integrationViewError ? 'unavailable' : 'ready',
-    warnings,
     errors,
-    // Connection details help while fixing a start-up problem; they are not shown once the service is running.
-    ...(report.ready ? {} : { attempts: report.attempts, lastAttemptAt: report.lastAttemptAt, databaseTarget: target }),
   };
 }
 

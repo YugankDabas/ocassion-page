@@ -24,7 +24,7 @@ diwali-gifts-admin/
 
 - A page is stored as structured JSON. The API's own renderer (`backend/src/render`) turns it into HTML.
 - **Publish** renders the page body (no header / footer) and stores it in the `PagePublication` table.
-  The gyftr.com backend reads it from the database through one read-only view. gyftr.com *pulls*; nothing is pushed.
+  The gyftr.com backend reads it from that table with a read-only login. gyftr.com *pulls*; nothing is pushed.
 - gyftr.com keeps its own header, footer, session and cart; only the body of the occasion page is ours.
 - There is no separate page app any more. Only this repository is deployed.
 
@@ -46,12 +46,13 @@ diwali-gifts-admin/
 
 ## Integration with gyftr.com (database contract)
 
-The gyftr.com backend connects to this database with a read-only login and reads one view,
-`integration.published_pages`: one row per published page, with `html` (style + markup + script) and the SEO
-columns. It looks a page up by `slug`. A row means the page was built here and is published (`source` is
-`OCCASION_PAGE_BUILDER`); no row means it is not ours.
+The gyftr.com backend connects to this database with its own read-only login, `occasion_tech_reader`, and reads
+the published pages straight from the tables: one query lists the occasions that have a published page, the
+other returns a page's `html` (style + markup + script) and SEO values from `PagePublication` by slug. A row
+means the page was built here and is published (`source` is `OCCASION_PAGE_BUILDER`); no row means it is not ours.
 
-Database access for the gyftr.com backend is granted by DevOps; it only needs `SELECT` on that view.
+The login can `SELECT` from `Occasion`, `PagePublication` and two columns of `Page` only. The backend creates it
+at start-up by running `backend/prisma/tech_reader.sql`, with the password from `TECH_READER_PASSWORD`.
 
 Full contract (columns, queries, embedding rules): [`docs/INTEGRATION_DATABASE.md`](docs/INTEGRATION_DATABASE.md).
 
@@ -118,6 +119,7 @@ variables on the ECS task definition and reads everything else from one Secrets 
 | `JWT_SECRET` | 48 random bytes (`openssl rand -base64 48`), different per environment | Signs admin sessions. |
 | `PAGE_PUBLIC_BASE_URL` | `https://www.gyftr.com/occasion` | Page URLs and canonical links are built from it. |
 | `S3_BUCKET` | Name of the media bucket | Uploaded images. The region is `AWS_REGION`; images are served from `https://<bucket>.s3.<region>.amazonaws.com`. |
+| `TECH_READER_PASSWORD` | `openssl rand -base64 24` | Optional. Password of the read-only database login for the gyftr.com tech team (`occasion_tech_reader`), created at start-up. |
 
 Keys the application does not know are ignored, so the secret can hold other things too.
 
@@ -211,8 +213,7 @@ The backend needs RDS PostgreSQL 15+ and an S3 media bucket with public object r
 The database only has to exist and be empty: the backend creates the schema at start-up (its database user needs
 rights to create tables). No one-off tasks are needed: the first start also creates the occasions, the default
 settings and the first administrator (see "First sign-in and users"); sign in and change the default password
-immediately after the first deploy. The gyftr.com backend also needs `SELECT` on `integration.published_pages`
-over the network path DevOps allows.
+immediately after the first deploy. The gyftr.com backend uses the login `occasion_tech_reader` (see docs/INTEGRATION_DATABASE.md) over the network path DevOps allows.
 
 Rollback = redeploy the previous image.
 
@@ -223,7 +224,7 @@ Rollback = redeploy the previous image.
 - Passwords: bcrypt, 12+ characters; login rate-limited. A password set by someone else must be changed at first sign-in.
 - All input validated with zod; rich text sanitised with an allow-list on save and again on render.
 - Uploads re-encoded by sharp (no SVG, size / pixel limits), random keys.
-- gyftr.com integration: read access to one database view; No public HTTP endpoint is exposed for it.
+- gyftr.com integration: a read-only database login limited to what its two queries read; No public HTTP endpoint is exposed for it.
 - Preview documents are served sandboxed (no access to the panel, its cookies or the API).
 - helmet security headers + CSP; logs redact cookies, tokens and secrets; no stack traces to clients.
 

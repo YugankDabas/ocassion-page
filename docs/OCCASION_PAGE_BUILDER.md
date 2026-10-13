@@ -27,7 +27,7 @@ it does not render the site header, footer, login or cart. Those stay with gyftr
 ```
  Editor ──► Admin panel ──► Admin API ──► PostgreSQL (RDS)
                                │              ▲
-                               │ images       │ SELECT … FROM integration.published_pages WHERE slug = ?
+                               │ images       │ SELECT … FROM "PagePublication" WHERE "slug" = ?
                                ▼              │
                               S3        gyftr.com backend ──► gyftr.com frontend (header + OUR HTML + footer)
 ```
@@ -36,7 +36,7 @@ it does not render the site header, footer, login or cart. Those stay with gyftr
 2. The editor clicks **Publish**. The API renders the page body to one HTML string
    (`<style>` + markup + `<script>`) and writes one row to the table `PagePublication`.
 3. A visitor opens `https://www.gyftr.com/occasion/<slug>`. The gyftr.com backend looks the slug up in the
-   view `integration.published_pages`.
+   table `PagePublication`, with its own read-only login.
 4. **Row found** → the page is ours: it sends `html` to the frontend. **No row** → gyftr.com serves its own page.
 5. **Unpublish** or **Archive** deletes the row. A brand discount change re-renders the row automatically.
 
@@ -49,58 +49,83 @@ it does not render the site header, footer, login or cart. Those stay with gyftr
 | Which field says "this is a panel page"? | `source`, a stored column, always `OCCASION_PAGE_BUILDER`. |
 | What is the real test? | A row exists for the slug only while the page is published from the panel. |
 
-## 4. For the gyftr.com backend: the view and the queries
+## 4. For the gyftr.com backend: the login and the two queries
 
-The gyftr.com backend reads **one view**, `integration.published_pages`. It never reads our tables, so we
-can change them without breaking gyftr.com.
+The gyftr.com backend connects with its own login, `occasion_tech_reader`. It can `SELECT` from `Occasion` and
+`PagePublication`, and from two columns of `Page` (`id`, `occasionId`): exactly what the two queries read.
+Nothing else: no drafts, no users, no audit log, and no insert, update or delete. It is limited to 20
+connections, 15 seconds per statement and 60 seconds for an idle open transaction.
 
-| Column | Type | Meaning |
-| --- | --- | --- |
-| `slug` | text | URL slug; the lookup key. |
-| `source` | text | Always `OCCASION_PAGE_BUILDER`. |
-| `version` | integer | Goes up each time an editor publishes. |
-| `html` | text | The page body to insert between header and footer. About 240 KB. |
-| `meta_title`, `meta_description`, `meta_keywords` | text | For the `<head>`. |
-| `canonical_url` | text | For `<link rel="canonical">`. |
-| `no_index` | boolean | `true` = emit `noindex, nofollow`. |
-| `og_image` | text | Absolute URL or empty. |
-| `json_ld` | jsonb | Array of schema.org objects. |
-| `published_at` | timestamp (UTC) | When this version was published. |
-| `updated_at` | timestamp (UTC) | Last time `html` actually changed. Safe to use as a cache key. |
+Table and column names are case-sensitive; keep the double quotes.
 
-Get a page (the only query needed per request):
+**Query 1 — occasions that have a published page**
 
 ```sql
-SELECT source, html, meta_title, meta_description, meta_keywords,
-       canonical_url, no_index, og_image, json_ld, version, updated_at
-FROM integration.published_pages
-WHERE slug = $1;
+SELECT o."slug"         AS occasion_slug,
+       o."name"         AS occasion_name,
+       pp."slug"        AS page_slug,
+       pp."version"     AS version,
+       pp."publishedAt" AS published_at,
+       pp."renderedAt"  AS updated_at
+FROM "PagePublication" pp
+JOIN "Page"     p ON p."id" = pp."pageId"
+JOIN "Occasion" o ON o."id" = p."occasionId"
+ORDER BY o."name", pp."slug";
 ```
 
-Check for a change without fetching the HTML:
+**Query 2 — the HTML of one page** (`$1` is a `page_slug` from query 1)
 
 ```sql
-SELECT version, updated_at FROM integration.published_pages WHERE slug = $1;
+SELECT pp."slug"                          AS page_slug,
+       pp."source"                        AS source,
+       pp."version"                       AS version,
+       pp."html"                          AS html,
+       pp."seo" ->> 'title'               AS meta_title,
+       pp."seo" ->> 'description'         AS meta_description,
+       pp."seo" ->> 'keywords'            AS meta_keywords,
+       pp."seo" ->> 'canonicalUrl'        AS canonical_url,
+       (pp."seo" ->> 'noIndex')::boolean  AS no_index,
+       pp."seo" ->> 'ogImage'             AS og_image,
+       pp."seo" -> 'jsonLd'               AS json_ld,
+       pp."publishedAt"                   AS published_at,
+       pp."renderedAt"                    AS updated_at
+FROM "PagePublication" pp
+WHERE pp."slug" = $1;
 ```
 
-List what the panel hosts:
-
-```sql
-SELECT slug, version, published_at, updated_at FROM integration.published_pages ORDER BY slug;
-```
+- A row from query 2 means the page was built here and is published (`source` is `OCCASION_PAGE_BUILDER`):
+  render `html`. No row means gyftr.com serves its own page.
+- The key is `page_slug`, the primary key of `PagePublication` and the last part of the URL. An occasion can
+  have more than one page, so the occasion is not the key.
 
 Rules for the gyftr.com side:
 
-- Cache each slug for 30–60 seconds, including "no row". Do not query on every page view.
-- If the query fails, serve the cached copy or the existing gyftr.com page. Never fail the page.
+- Cache each page for 30–60 seconds, including "no row". Do not query on every page view.
+- If a query fails, serve the cached copy or the existing gyftr.com page. Never fail the page.
 - Validate the slug (`^[a-z0-9]+(-[a-z0-9]+)*$`, at most 120 characters) and use bound parameters.
 - Insert `html` unchanged in a full-width container. On client-side navigation, a script inserted with
   `innerHTML` does not run: re-create the script element, then call `window.GyftrOccasion.init()`.
 - The HTML cannot clash with the site: every class is prefixed `occ-`, every CSS rule is scoped under
   `.occ-occasion`, fonts are embedded, and the script touches only its own elements.
 
-Database access is granted by DevOps. The gyftr.com backend needs only `SELECT` on this view; a read-only
-login limited to it is recommended, so it cannot see drafts, users or password hashes.
+**The login.** The login is created by the panel's backend at start-up, by running the SQL script
+`backend/prisma/tech_reader.sql`. Its password is the setting `TECH_READER_PASSWORD` (a key in the Secrets
+Manager secret). The plain password is never sent to the database: it is stored as a SCRAM-SHA-256 hash.
+
+The script runs at every start-up and is safe to repeat:
+
+- The first time, it creates the login. Only this step needs a special right for the panel's database user.
+  Without it the panel still works and `GET /healthz` shows the statement the database administrator has to
+  run: `ALTER ROLE "<panel database user>" CREATEROLE;` Once the login exists the right can be taken away
+  again (`... NOCREATEROLE;`).
+- Every time after that, it only puts the login's rights back to exactly the ones above. This needs no
+  special right.
+- The password is set only when the login does not accept the configured one, so changing
+  `TECH_READER_PASSWORD` changes the password at the next start-up (which needs `CREATEROLE` for that start-up).
+- Without `TECH_READER_PASSWORD`, no login is created.
+
+The alternative where the database administrator creates the login by hand, and how to end the access, are in
+`docs/INTEGRATION_DATABASE.md` ("How the login is created").
 
 ## 5. The database: 10 tables
 
@@ -119,9 +144,8 @@ Images are **not** stored in the database. They are in S3; the database holds th
 | `SiteSetting` | Header / footer links used in preview and download | one row: `key = 'site'`, `value` JSON |
 | `AuditLog` | Who did what | `actorId`, `action`, `entityType`, `entityId`, `metadata`, `ip` |
 
-The view `integration.published_pages` is a plain `SELECT` over `PagePublication` that splits the `seo`
-JSON into the `meta_*` columns. Table definitions: [`backend/prisma/schema.prisma`](../backend/prisma/schema.prisma).
-The SQL that creates the tables (the view is created by `backend/src/integrationView.ts` at start-up):
+Table definitions: [`backend/prisma/schema.prisma`](../backend/prisma/schema.prisma).
+The SQL that creates the tables:
 [`backend/prisma/migrations/20261011120000_init/migration.sql`](../backend/prisma/migrations/20261011120000_init/migration.sql).
 
 Why the page is stored twice (`Page.draft` / `Page.published` JSON and `PagePublication.html`): the JSON is
@@ -225,7 +249,8 @@ All database access is in `src/repositories/`. No other file runs a query.
 | `prisma/migrations/…_user_must_change_password/migration.sql` | Adds `User.mustChangePassword`. |
 | `assets/render/` | `page.css` (the page stylesheet) and the GyFTR logos used in preview / download. |
 | **`src/server.ts`** | Entry point: read Secrets Manager, build the database connection, validate settings, run migrations, prepare a new database, start the server. |
-| **`src/integrationView.ts`** | Creates the schema `integration` and the view `integration.published_pages` at start-up. Needs `CREATE` on the database; without it the panel still works and `/healthz` says what to grant. |
+| **`src/techAccess.ts`** | Runs `prisma/tech_reader.sql` at start-up: creates the tech team's read-only login (`occasion_tech_reader`) with the password from `TECH_READER_PASSWORD` and gives it `SELECT` on `Occasion`, `PagePublication` and two columns of `Page`. |
+| `prisma/tech_reader.sql` | The SQL script for that login. Run by the application only. |
 | **`src/startup.ts`** | The start-up report behind `GET /healthz`: whether the secret was read, which settings were found (names only), and what is wrong. |
 | **`src/bootstrap.ts`** | Runs at every start-up; on a new database it creates the 37 occasions, the default header / footer settings and the first administrator. Does nothing once they exist. |
 | `src/app.ts` | The Express app: logging, security headers, `/healthz`, `/api/v1`, serves the panel. |
@@ -293,7 +318,8 @@ Manager secret; the container is told only the secret's name.
   "DB_PASSWORD": "<database-password>",
   "JWT_SECRET": "<output of: openssl rand -base64 48>",
   "PAGE_PUBLIC_BASE_URL": "https://www.gyftr.com/occasion",
-  "S3_BUCKET": "<bucket-name>"
+  "S3_BUCKET": "<bucket-name>",
+  "TECH_READER_PASSWORD": "<output of: openssl rand -base64 24>"
 }
 ```
 
@@ -308,6 +334,8 @@ Manager secret; the container is told only the secret's name.
 - `JWT_SECRET` must be at least 32 characters and different in staging and production.
 - `S3_BUCKET` is the bucket name only: no `s3://`, no dots. The region is `AWS_REGION`. Images are served
   from `https://<bucket>.s3.<region>.amazonaws.com`, so the bucket must allow public reads of its objects.
+- `TECH_READER_PASSWORD` is optional: it is the password of the tech team's read-only database login (section 4).
+  Leave it out and no such login is created.
 - No AWS access keys are stored: S3 and Secrets Manager are reached with the ECS task role.
 
 ### 8.3 What happens at start-up
@@ -323,21 +351,23 @@ It repeats these steps every 15 seconds until all succeed, so fixing the cause i
    schema `public`:  `GRANT USAGE, CREATE ON SCHEMA public TO "<DB_USER>";`  (on PostgreSQL 15+,
    `GRANT ALL ON DATABASE` does not include it). A failed earlier attempt is retried automatically.
 5. A new database is prepared: occasions, default site settings, the first administrator (section 9.1).
-6. The view for gyftr.com, `integration.published_pages`, is created. This needs `GRANT CREATE ON DATABASE
-   "<DB_NAME>" TO "<DB_USER>";`. Without it the panel still works, the view is retried every minute and
-   `/healthz` shows the statement to run.
+6. The tech team's read-only login `occasion_tech_reader` is created from `TECH_READER_PASSWORD` if it does not
+   exist yet, and its rights are put back to exactly what the two queries read (`prisma/tech_reader.sql`).
+   A failure does not stop the panel; it is shown on `/healthz` and tried again.
 
-`GET /healthz` always answers 200 and reports, without ever showing a value:
+`GET /healthz` always answers 200 and never shows a value, a host name or a user name:
+
+```json
+{ "status": "ok", "database": "ready", "builtAt": "2026-10-13T09:35:24Z",
+  "secrets": { "source": "AWS Secrets Manager", "fetched": true, "missing": [] }, "errors": [] }
+```
 
 | Field | Meaning |
 | --- | --- |
-| `database` | `ready`, `starting`, `unavailable` (with `reason`, `fix` and the error text) or `not_configured` |
+| `database` | `ready`, `starting`, `unavailable` or `not_configured` |
 | `builtAt` | When the running build was made, to tell which build is deployed |
-| `secretsManager` | Whether the secret was fetched, whether it was valid JSON, and the names of the settings read from it |
-| `settings` | Each setting: set (and from where), missing, or still a placeholder |
-| `allRequiredSettingsPresent` | `true` when nothing required is missing |
-| `integrationView` | `ready`, `unavailable` or `pending` |
-| `warnings`, `errors` | What is wrong, with passwords and keys removed. Error texts and the connection target are shown only until the service is ready |
+| `secrets` | Whether the Secrets Manager secret was fetched, and the names of required settings that are missing |
+| `errors` | What is wrong and what to do about it, with passwords and keys removed |
 
 ### 8.4 Optional settings (defaults)
 
@@ -369,7 +399,7 @@ What the backend needs:
   `secretsmanager:GetSecretValue` on the secret.
 - Health check: `GET /healthz` on both services.
 - **No one-off tasks or scripts.** The first start prepares the database (section 9.1).
-- **gyftr.com backend access**: `SELECT` on `integration.published_pages`, over a network path DevOps allows.
+- **gyftr.com backend access**: the login `occasion_tech_reader` (section 4), over a network path DevOps allows.
 
 ### 9.1 First sign-in and users
 
@@ -397,14 +427,14 @@ allow-list) is what protects that window.
 - Every input is validated; rich text is sanitised on save and again on render.
 - Uploads are re-encoded (no SVG), size-limited, stored under random keys.
 - Preview pages are served sandboxed: no access to the panel, its cookies or the API.
-- No endpoint is exposed for gyftr.com; it reads one database view.
+- No endpoint is exposed for gyftr.com; it reads the published pages with a read-only database login.
 
 Roles: `ADMIN` (everything, including users), `PUBLISHER` (publish, brands, templates), `EDITOR` (drafts and media).
 
 ## 11. Questions a reviewer may ask
 
-- **Why a view instead of the table?** Our tables can change without breaking gyftr.com, and its login
-  never needs to see drafts, users or password hashes.
+- **What can the gyftr.com login see?** Three tables (`Occasion`, `Page`, `PagePublication`), read-only. Not users,
+  password hashes or the audit log.
 - **Will it load the database?** One primary-key lookup per request, and the gyftr.com backend caches.
 - **Why store HTML instead of rendering per request?** Reading becomes one row fetch; rendering happens once, at publish.
 - **What if a discount changes?** Published pages re-render automatically; `updated_at` changes, `version` does not.

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Button, TextInput } from '../../components/ui';
+import { Button, PasswordInput } from '../../components/ui';
 import { api, errorMessage } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 
@@ -28,9 +28,9 @@ export function ChangePasswordForm({ currentLabel = 'Current password' }: { curr
 
   return (
     <>
-      <TextInput label={currentLabel} type="password" autoComplete="current-password" value={currentPassword} onChange={setCurrent} />
-      <TextInput label="New password" type="password" autoComplete="new-password" value={newPassword} onChange={setNew} hint="12+ characters with letters and numbers" />
-      <TextInput label="Confirm new password" type="password" autoComplete="new-password" value={confirm} onChange={setConfirm} />
+      <PasswordInput label={currentLabel} autoComplete="current-password" value={currentPassword} onChange={setCurrent} />
+      <PasswordInput label="New password" autoComplete="new-password" value={newPassword} onChange={setNew} hint="12+ characters with letters and numbers" />
+      <PasswordInput label="Confirm new password" autoComplete="new-password" value={confirm} onChange={setConfirm} />
       <Button variant="primary" loading={loading} onClick={() => void change()} disabled={!currentPassword || !newPassword || !confirm}>
         Change password
       </Button>

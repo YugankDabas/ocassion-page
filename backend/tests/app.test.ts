@@ -56,7 +56,7 @@ describe('while the database is being prepared', () => {
     try {
       const health = await fetch(`${url}/healthz`);
       expect(health.status).toBe(200);
-      expect(await health.json()).toMatchObject({ status: 'ok', database: 'starting', errors: [] });
+      expect(await health.json()).toEqual({ status: 'ok', database: 'starting', builtAt: 'development', secrets: { source: 'environment', missing: [] }, errors: [] });
 
       const login = await fetch(`${url}/api/v1/auth/login`, { method: 'POST', headers: { Origin: frontendOrigin, 'content-type': 'application/json' }, body: '{}' });
       expect(login.status).toBe(503);
@@ -64,7 +64,7 @@ describe('while the database is being prepared', () => {
       expect(((await login.json()) as { error: { code: string } }).error.code).toBe('STARTING');
 
       startup.databaseError = 'connection refused';
-      expect(await (await fetch(`${url}/healthz`)).json()).toMatchObject({ status: 'ok', database: 'unavailable', reason: 'other', errors: ['Database: connection refused'] });
+      expect(await (await fetch(`${url}/healthz`)).json()).toMatchObject({ status: 'ok', database: 'unavailable', errors: ['Database: connection refused'] });
       startup.ready = true;
       expect((await fetch(`${url}/api/v1/auth/me`, { headers: { Origin: frontendOrigin } })).status).toBe(401); // the API itself answers now
     } finally {

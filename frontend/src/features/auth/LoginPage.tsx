@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router';
 import logo from '../../assets/gyftr-logo.png';
-import { Button, TextInput } from '../../components/ui';
+import { Button, PasswordInput, TextInput } from '../../components/ui';
 import { errorMessage } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 
@@ -41,7 +41,7 @@ export function LoginPage() {
         </p>
         <form className="stack" onSubmit={submit} noValidate>
           <TextInput label="Work email" type="email" autoComplete="username" required value={email} onChange={setEmail} autoFocus />
-          <TextInput label="Password" type="password" autoComplete="current-password" required value={password} onChange={setPassword} />
+          <PasswordInput label="Password" autoComplete="current-password" required value={password} onChange={setPassword} />
           {error && (
             <div className="alert alert-danger" role="alert">
               {error}
@@ -51,9 +51,6 @@ export function LoginPage() {
             Sign in
           </Button>
         </form>
-        <p className="muted small" style={{ margin: '14px 0 0', textAlign: 'center' }}>
-          Build {new Date(__BUILD_TIME__).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
-        </p>
       </div>
     </div>
   );

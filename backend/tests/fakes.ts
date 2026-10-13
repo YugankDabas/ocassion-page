@@ -152,7 +152,7 @@ export class InMemoryPublicationRepository implements IPublicationRepository {
     Object.assign(row, { html: next.html, seo: next.seo, renderedAt: new Date() });
     return 'updated';
   }
-  /** What the gyftr.com backend sees for a URL slug (the lookup integration.published_pages answers). */
+  /** What the gyftr.com backend finds for a URL slug (a lookup on PagePublication by its primary key). */
   bySlug(slug: string) {
     return this.store.publications.find((r) => r.slug === slug) ?? null;
   }

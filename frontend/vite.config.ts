@@ -5,8 +5,6 @@ export default defineConfig(() => {
   const apiTarget = 'http://localhost:4000';
   return {
     plugins: [react()],
-    // Shown on the sign-in screen, to tell which build is running.
-    define: { __BUILD_TIME__: JSON.stringify(new Date().toISOString()) },
     server: {
       port: 5173,
       // Same-origin in dev: the panel calls /api/* and Vite forwards to the backend.

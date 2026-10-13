@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { ROLES, type Role } from '../../contracts';
-import { Badge, Button, Modal, PageHeader, Select, Spinner, TextInput, Toggle, formatDate } from '../../components/ui';
+import { Badge, Button, Modal, PageHeader, PasswordInput, Select, Spinner, TextInput, Toggle, formatDate } from '../../components/ui';
 import { errorMessage } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { useSaveUser, useUsers } from '../../lib/queries';
@@ -102,9 +102,8 @@ function UserModal({ user, onClose }: { user: User | null; onClose: () => void }
         <TextInput label="Name" value={name} onChange={setName} maxLength={120} />
         {!user && <TextInput label="Email" type="email" value={email} onChange={setEmail} />}
         <Select label="Role" value={role} onChange={setRole} options={ROLES.map((r) => ({ value: r, label: r.toLowerCase() }))} hint={ROLE_HELP[role]} />
-        <TextInput
+        <PasswordInput
           label={user ? 'Reset password (optional)' : 'Temporary password'}
-          type="password"
           autoComplete="new-password"
           value={password}
           onChange={setPassword}

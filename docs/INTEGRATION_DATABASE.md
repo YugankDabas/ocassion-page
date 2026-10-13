@@ -1,8 +1,8 @@
-# Occasion Pages — Database contract for the gyftr.com backend
+# Occasion Pages — reading published pages from the database (for the gyftr.com backend)
 
 The Occasion Page Builder renders each published occasion page to HTML and stores it in its
-PostgreSQL database. The gyftr.com backend connects to that database **read-only**, reads the
-HTML from one view, and exposes it to the gyftr.com frontend through its own API.
+PostgreSQL database. The gyftr.com backend connects to that database with a **read-only login**,
+runs the two queries below, and gives the HTML to the gyftr.com frontend through its own API.
 
 Nothing is pushed to gyftr.com. Publishing in the panel writes a row; unpublishing deletes it.
 
@@ -11,76 +11,96 @@ Nothing is pushed to gyftr.com. Publishing in the panel writes a row; unpublishi
 | Item | Value |
 | --- | --- |
 | Engine | PostgreSQL (RDS) |
-| Host, port, database, login | Provided by DevOps per environment, through a secure channel |
-| TLS | Required (`sslmode=require` or stricter) |
-| Object to read | The view `integration.published_pages` |
+| Host, port, database | Same as the panel's database, per environment |
+| Login | `occasion_tech_reader` (password shared through a secure channel) |
+| TLS | Required (`sslmode=require`) |
 
-The gyftr.com backend only needs `SELECT` on that one view. Recommended for the login DevOps provides:
-read-only, limited to this view, with a connection limit and a statement timeout. On the client side, keep
-the connection pool small (10 or fewer) and never write to this database.
+What the login can do:
 
-**The view is the contract.** Its name, columns and meanings will not change without
-notice. Everything else in the database is internal and may change at any time.
+- `SELECT` on `"Occasion"` and `"PagePublication"`, and on two columns of `"Page"` (`"id"`, `"occasionId"`):
+  exactly what the two queries below read. `SELECT * FROM "Page"` is refused.
+- Nothing else. It cannot read drafts, users, the audit log or any other table, and it cannot insert,
+  update, delete or create anything.
 
-## The view: `integration.published_pages`
+Limits on the login (so a fault on one side cannot hurt the other):
 
-One row per **published** page. A row exists only while the page is published.
+- At most 20 connections at the same time. Use a small pool, 2 to 5 connections per backend instance.
+- A statement is stopped after 15 seconds. Both queries take a few milliseconds.
+- A transaction left open and idle is closed after 60 seconds.
 
-| Column | Type | Meaning |
-| --- | --- | --- |
-| `slug` | text | Last part of the page URL (`/occasion/<slug>`). Unique; the lookup key. |
-| `source` | text | Always `OCCASION_PAGE_BUILDER`: the system that produced the page. Stored on every row, so it identifies a panel page when the row is merged with gyftr.com's own page data. |
-| `version` | integer | Increases each time an editor publishes. |
-| `html` | text | The page body, ready to insert: one `<style>`, the markup, one `<script>`. No `<html>`, `<head>`, `<body>`, header or footer. About 240 KB. |
-| `meta_title` | text | For `<title>` and `og:title`. |
-| `meta_description` | text | For the meta description and `og:description`. |
-| `meta_keywords` | text | May be empty. |
-| `canonical_url` | text | For `<link rel="canonical">`. |
-| `no_index` | boolean | `true` = emit `noindex, nofollow`. |
-| `og_image` | text | Absolute URL, or empty. |
-| `json_ld` | jsonb | Array of schema.org objects. Emit each as `<script type="application/ld+json">`. |
-| `published_at` | timestamp (UTC) | When the current version was published. |
-| `updated_at` | timestamp (UTC) | Last time `html` changed: on publish, or when brand data shown on the page changed. Safe to use as the cache key. |
+Table and column names are case-sensitive: keep the double quotes exactly as written below.
 
-### Get one page
+## Query 1 — occasions that have a published page
 
 ```sql
-SELECT source, html, meta_title, meta_description, meta_keywords, canonical_url, no_index, og_image, json_ld,
-       version, updated_at
-FROM integration.published_pages
-WHERE slug = $1;
+SELECT o."slug"         AS occasion_slug,
+       o."name"         AS occasion_name,
+       pp."slug"        AS page_slug,
+       pp."version"     AS version,
+       pp."publishedAt" AS published_at,
+       pp."renderedAt"  AS updated_at
+FROM "PagePublication" pp
+JOIN "Page"     p ON p."id" = pp."pageId"
+JOIN "Occasion" o ON o."id" = p."occasionId"
+ORDER BY o."name", pp."slug";
 ```
 
-- **One row**: the page was built in the panel and is published. Send `html` to the frontend to render between the site header and footer.
-- **No row**: the panel has no published page for that URL. Serve the existing gyftr.com page.
+| Column | Meaning |
+| --- | --- |
+| `occasion_slug`, `occasion_name` | The occasion, e.g. `diwali-gift-cards`, `Diwali Gift Cards`. |
+| `page_slug` | The key for query 2. It is the last part of the page URL (`/occasion/<page_slug>`) and is unique. |
+| `version` | Goes up each time an editor publishes. |
+| `published_at` | When the current version was published (UTC). |
+| `updated_at` | Last time the HTML changed: on publish, or when a brand discount shown on the page changed (UTC). |
 
-That single check is how the backend tells a panel page from gyftr.com's own page. A page is in this
-view only while it is published: unpublishing or archiving it in the panel removes the row.
+Only occasions with a published page appear. An occasion can have more than one page; each published
+page is one row, which is why the key is `page_slug` and not the occasion.
 
-### Check for a change without fetching the HTML
+## Query 2 — the HTML of one page
+
+`$1` is a `page_slug` from query 1.
 
 ```sql
-SELECT version, updated_at FROM integration.published_pages WHERE slug = $1;
+SELECT pp."slug"                          AS page_slug,
+       pp."source"                        AS source,
+       pp."version"                       AS version,
+       pp."html"                          AS html,
+       pp."seo" ->> 'title'               AS meta_title,
+       pp."seo" ->> 'description'         AS meta_description,
+       pp."seo" ->> 'keywords'            AS meta_keywords,
+       pp."seo" ->> 'canonicalUrl'        AS canonical_url,
+       (pp."seo" ->> 'noIndex')::boolean  AS no_index,
+       pp."seo" ->> 'ogImage'             AS og_image,
+       pp."seo" -> 'jsonLd'               AS json_ld,
+       pp."publishedAt"                   AS published_at,
+       pp."renderedAt"                    AS updated_at
+FROM "PagePublication" pp
+WHERE pp."slug" = $1;
 ```
 
-`updated_at` changes only when the stored `html` (or its SEO data) actually changes: on publish, and when a brand
-discount or link used by the page changes. `version` changes only when an editor publishes.
+| Column | Meaning |
+| --- | --- |
+| `page_slug` | The page; primary key of `"PagePublication"`, so this is a single index lookup. |
+| `source` | Always `OCCASION_PAGE_BUILDER`: the page was built in the panel. |
+| `html` | The page body, ready to insert: one `<style>`, the markup, one `<script>`. No `<html>`, `<head>`, header or footer. About 240 KB. |
+| `meta_title`, `meta_description`, `meta_keywords` | For the `<head>`. |
+| `canonical_url` | For `<link rel="canonical">`. |
+| `no_index` | `true` = emit `noindex, nofollow`. |
+| `og_image` | Absolute URL, or empty. |
+| `json_ld` | Array of schema.org objects. Emit each as `<script type="application/ld+json">`. |
 
-### List the pages the panel hosts
-
-```sql
-SELECT slug, version, published_at, updated_at FROM integration.published_pages ORDER BY slug;
-```
+- **One row**: the page was built in the panel and is published. Render `html` between the site header and footer.
+- **No row**: the panel has no published page with that slug. Serve the existing gyftr.com page.
 
 ## Rules for the backend
 
-1. **Cache.** Keep each page in memory (or Redis) for 30 to 60 seconds, keyed by `slug`,
-   and cache "no row" as well. Do not query on every page view. A publish is then visible within the cache time.
-2. **Never fail the page.** If the query errors or times out, serve the cached copy if there is one,
+1. **Cache.** Keep each page for 30 to 60 seconds, keyed by `page_slug`, and cache "no row" as well.
+   Do not query on every page view. `updated_at` tells whether the HTML changed.
+2. **Never fail the page.** If a query errors or times out, serve the cached copy if there is one,
    otherwise the existing gyftr.com page.
-3. **Select `html` only when it is needed.** It is large; listings and change checks should not read it.
+3. **Select `html` only when it is needed.** It is large; query 1 does not read it.
 4. **Validate the slug** before querying (`^[a-z0-9]+(-[a-z0-9]+)*$`, at most 120 characters) and always use bound parameters.
-5. **Treat `html` as trusted markup from this system only.** Do not modify it or merge anything into it.
+5. **Do not modify `html`.** Insert it as it is.
 
 ## Rules for the frontend
 
@@ -96,17 +116,41 @@ SELECT slug, version, published_at, updated_at FROM integration.published_pages 
 ### Why the HTML does not clash with gyftr.com's styles
 
 - Every class is prefixed `occ-`, and every CSS rule is scoped under the root `.occ-occasion`.
-  Bootstrap and site rules cannot match it, and its rules cannot leak out.
 - The root resets inherited typography, so the site's fonts and colours do not bleed in.
-- Fonts are embedded as `data:` URIs and images are `https` URLs, which the current gyftr.com
-  Content-Security-Policy already allows.
+- Fonts are embedded as `data:` URIs and images are `https` URLs.
 - The script touches only elements inside `.occ-occasion` and defines one global, `window.GyftrOccasion`.
 
-## Suggested shape for the gyftr.com API (to its frontend)
+## How the login is created
 
-```
-GET /occasion-pages/{slug}
-200 → { "slug": "...", "version": 3, "html": "...", "seo": { "title": "...", "description": "...",
-        "keywords": "...", "canonicalUrl": "...", "noIndex": false, "ogImage": "...", "jsonLd": [ ... ] } }
-404 → the page is not hosted by the panel; the frontend shows the existing page
+The login is created by the panel's backend at start-up, by running the SQL script
+`backend/prisma/tech_reader.sql`. Its password is the setting `TECH_READER_PASSWORD` (a key in the Secrets
+Manager secret). The plain password is never sent to the database: it is stored as a SCRAM-SHA-256 hash.
+
+The script runs at every start-up and is safe to repeat:
+
+- The first time, it creates the login. This is the only step that needs a special database right
+  (`CREATEROLE`) for the panel's database user. Without it the panel still works, and `GET /healthz` shows
+  the statement the database administrator has to run: `ALTER ROLE "<panel database user>" CREATEROLE;`
+  Once the login exists, the right can be taken away again: `ALTER ROLE "<panel database user>" NOCREATEROLE;`
+- Every time after that, it only puts the login's rights back to exactly the ones listed above (anything
+  granted in between is removed). This needs no special right: the panel's database user owns the tables.
+- The password is set only when the login does not accept the configured one. So changing
+  `TECH_READER_PASSWORD` changes the login's password at the next start-up, which needs `CREATEROLE` again
+  for that one start-up.
+- Without `TECH_READER_PASSWORD`, no login is created. Removing the setting later does not remove the
+  login: to end the access, the database administrator runs
+  `DROP OWNED BY occasion_tech_reader; DROP ROLE occasion_tech_reader;`
+- What the login may do is decided by its rights. The session settings (read-only transactions, timeouts)
+  only prevent accidents.
+
+If the panel's database user must never have `CREATEROLE`, the database administrator creates the login
+once instead, and the panel only gives it its rights at start-up:
+
+```sql
+CREATE ROLE occasion_tech_reader LOGIN PASSWORD '<the value of TECH_READER_PASSWORD>'
+  NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT CONNECTION LIMIT 20;
+ALTER ROLE occasion_tech_reader SET default_transaction_read_only = 'on';
+ALTER ROLE occasion_tech_reader SET statement_timeout = '15s';
+ALTER ROLE occasion_tech_reader SET lock_timeout = '5s';
+ALTER ROLE occasion_tech_reader SET idle_in_transaction_session_timeout = '60s';
 ```

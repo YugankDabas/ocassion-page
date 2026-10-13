@@ -1,36 +1,92 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runMigrations } from '../src/config/migrate';
 import { createPrismaClient } from '../src/db';
-import { ensureIntegrationView } from '../src/integrationView';
 import { PrismaPageRepository } from '../src/repositories/prisma/PrismaPageRepository';
 import { PrismaPublicationRepository } from '../src/repositories/prisma/PrismaPublicationRepository';
 import type { PageSeo } from '../src/render/seo';
+import { ensureTechReader } from '../src/techAccess';
 
 /**
- * The database contract the gyftr.com backend depends on, checked against a real PostgreSQL:
- * the migration, the view and the publish / refresh / unpublish queries.
+ * What the gyftr.com tech team depends on, checked against a real PostgreSQL: the schema the
+ * application creates at start-up, the publish / refresh / unpublish queries, the read-only login
+ * created by prisma/tech_reader.sql, and the two queries their backend runs with it
+ * (docs/INTEGRATION_DATABASE.md).
  *
  * Runs only when TEST_DATABASE_URL points at a THROWAWAY database whose name ends in "_test"
  * (CI provides one). The database is wiped first.
  */
 const url = process.env.TEST_DATABASE_URL;
 
-describe.skipIf(!url)('database contract (integration.published_pages)', () => {
+/** A login of its own, so a real occasion_tech_reader on the same server is never touched. */
+const LOGIN = 'occasion_tech_reader_test';
+
+/** Query 1 of docs/INTEGRATION_DATABASE.md, word for word: the occasions that have a published page. */
+const PUBLISHED_OCCASIONS = `
+SELECT o."slug"         AS occasion_slug,
+       o."name"         AS occasion_name,
+       pp."slug"        AS page_slug,
+       pp."version"     AS version,
+       pp."publishedAt" AS published_at,
+       pp."renderedAt"  AS updated_at
+FROM "PagePublication" pp
+JOIN "Page"     p ON p."id" = pp."pageId"
+JOIN "Occasion" o ON o."id" = p."occasionId"
+ORDER BY o."name", pp."slug"`;
+
+/** Query 2 of docs/INTEGRATION_DATABASE.md, word for word: the HTML of one page, by page_slug from query 1. */
+const PAGE_HTML = `
+SELECT pp."slug"                          AS page_slug,
+       pp."source"                        AS source,
+       pp."version"                       AS version,
+       pp."html"                          AS html,
+       pp."seo" ->> 'title'               AS meta_title,
+       pp."seo" ->> 'description'         AS meta_description,
+       pp."seo" ->> 'keywords'            AS meta_keywords,
+       pp."seo" ->> 'canonicalUrl'        AS canonical_url,
+       (pp."seo" ->> 'noIndex')::boolean  AS no_index,
+       pp."seo" ->> 'ogImage'             AS og_image,
+       pp."seo" -> 'jsonLd'               AS json_ld,
+       pp."publishedAt"                   AS published_at,
+       pp."renderedAt"                    AS updated_at
+FROM "PagePublication" pp
+WHERE pp."slug" = $1`;
+
+type Row = Record<string, unknown>;
+
+describe.skipIf(!url)('database: schema at start-up and the tech team\'s read-only login', () => {
   let db: PrismaClient;
+  let tech: PrismaClient;
+  const password = randomBytes(18).toString('base64'); // like `openssl rand -base64 24`: may contain + / =
   const migrationResults: string[] = [];
   const seo: PageSeo = { title: 'Diwali | GyFTR', description: 'd', keywords: 'k', canonicalUrl: 'https://www.gyftr.com/occasion/diwali', noIndex: false, ogImage: '', jsonLd: [{ '@type': 'FAQPage' }] };
   const userId = randomUUID();
   let pageId: string;
 
+  /** A connection signed in as the tech login, with its password: exactly what their backend has. */
+  const signInAsTech = (withPassword: string): PrismaClient => {
+    const target = new URL(url!);
+    target.username = LOGIN;
+    target.password = encodeURIComponent(withPassword);
+    return createPrismaClient(target.toString());
+  };
+  const loginExists = async () => (await db.$queryRawUnsafe<{ exists: boolean }[]>(`SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${LOGIN}') AS "exists"`))[0]!.exists;
+  const dropLogin = async () => {
+    if (!(await loginExists())) return;
+    await db.$executeRawUnsafe(`DROP OWNED BY ${LOGIN}`);
+    await db.$executeRawUnsafe(`DROP ROLE ${LOGIN}`);
+  };
+  const asTech = <T = Row[]>(sql: string, ...params: unknown[]): Promise<T> => tech.$queryRawUnsafe<T>(sql, ...params);
+
   beforeAll(async () => {
     const target = new URL(url!);
     if (!target.pathname.endsWith('_test')) throw new Error('TEST_DATABASE_URL must name a database ending in "_test": it is wiped');
     db = createPrismaClient(url!);
-    await db.$executeRawUnsafe('DROP SCHEMA IF EXISTS integration CASCADE');
+    await dropLogin();
     await db.$executeRawUnsafe('DROP SCHEMA public CASCADE');
     await db.$executeRawUnsafe('CREATE SCHEMA public');
+    await db.$executeRawUnsafe('GRANT USAGE ON SCHEMA public TO PUBLIC'); // as in every new database
 
     // A record left by an attempt that failed (for example before a permission was granted) must not block the next one.
     await db.$executeRawUnsafe('CREATE TABLE "_prisma_migrations" ("id" VARCHAR(36) PRIMARY KEY NOT NULL, "checksum" VARCHAR(64) NOT NULL, "finished_at" TIMESTAMPTZ, "migration_name" VARCHAR(255) NOT NULL, "logs" TEXT, "rolled_back_at" TIMESTAMPTZ, "started_at" TIMESTAMPTZ NOT NULL DEFAULT now(), "applied_steps_count" INTEGER NOT NULL DEFAULT 0)');
@@ -39,22 +95,21 @@ describe.skipIf(!url)('database contract (integration.published_pages)', () => {
     migrationResults.push(await runMigrations(url!));
     migrationResults.push(await runMigrations(url!)); // every start-up runs it again
 
-    // The application creates the view at start-up; doing it twice must be harmless.
-    await ensureIntegrationView(db);
-    await ensureIntegrationView(db);
-
     await db.user.create({ data: { id: userId, email: 'a@gyftr.net', name: 'A', passwordHash: 'x' } });
-    const occasion = await db.occasion.create({ data: { slug: 'diwali', name: 'Diwali', shortName: 'Diwali', pageUrl: 'https://www.gyftr.com/occasion/diwali', theme: {} } });
+    const occasion = await db.occasion.create({ data: { slug: 'diwali-gift-cards', name: 'Diwali Gift Cards', shortName: 'Diwali', pageUrl: 'https://www.gyftr.com/occasion/diwali', theme: {} } });
+    await db.occasion.create({ data: { slug: 'holi-gift-ideas', name: 'Holi Gift Cards', shortName: 'Holi', pageUrl: 'https://www.gyftr.com/occasion/holi', theme: {} } });
     const page = await db.page.create({ data: { slug: 'diwali', title: 'Diwali', occasionId: occasion.id, draft: {} } });
     pageId = page.id;
   }, 120_000);
 
   afterAll(async () => {
+    await tech?.$disconnect();
+    if (db) await dropLogin().catch(() => undefined);
     await db?.$disconnect();
   });
 
   const revision = { kind: 'PUBLISH' as const, title: 'Diwali', slug: 'diwali', content: {}, note: '', createdById: userId };
-  const view = () => db.$queryRawUnsafe<Record<string, unknown>[]>(`SELECT * FROM integration.published_pages WHERE slug = 'diwali'`);
+  const html = async () => (await asTech(PAGE_HTML, 'diwali'))[0];
 
   it('creates the schema once, and recovers from an earlier failed attempt', async () => {
     expect(migrationResults).toEqual(['Applied 20261011120000_init, 20261012120000_user_must_change_password', 'No pending migrations']);
@@ -68,21 +123,61 @@ describe.skipIf(!url)('database contract (integration.published_pages)', () => {
     ]);
     const tables = await db.$queryRawUnsafe<{ count: number }[]>(`SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema = 'public' AND table_name <> '_prisma_migrations'`);
     expect(tables[0]!.count).toBe(10);
+    const otherSchemas = await db.$queryRawUnsafe<{ count: number }[]>(`SELECT count(*)::int AS count FROM information_schema.schemata WHERE schema_name = 'integration'`);
+    expect(otherSchemas[0]!.count).toBe(0); // tables in "public" only: no other schema is created
   });
 
-  it('has no row for a page that is not published', async () => {
-    expect(await view()).toEqual([]);
+  it('the start-up script creates the tech login from the configured password, and only then', async () => {
+    expect(await ensureTechReader(url!, undefined, LOGIN)).toEqual({ warnings: [] }); // no password configured: nothing is created
+    expect(await loginExists()).toBe(false);
+
+    // Several containers start together: one creates the login, the others wait for it.
+    const together = await Promise.all([1, 2, 3].map(() => ensureTechReader(url!, password, LOGIN)));
+    expect(together).toEqual([{ warnings: [] }, { warnings: [] }, { warnings: [] }]);
+    expect(await loginExists()).toBe(true);
+
+    // Every start-up runs it again, and leaves a password that is already the configured one alone.
+    const stored = () => db.$queryRawUnsafe<{ rolpassword: string }[]>(`SELECT rolpassword FROM pg_authid WHERE rolname = '${LOGIN}'`).catch(() => []);
+    const before = await stored();
+    expect(await ensureTechReader(url!, password, LOGIN)).toEqual({ warnings: [] });
+    expect(await stored()).toEqual(before);
+    if (before.length) expect(before[0]!.rolpassword).toMatch(/^SCRAM-SHA-256\$/); // where pg_authid is readable: stored hashed
+
+    tech = signInAsTech(password); // a real sign-in with the password, as their backend does
+    expect(await asTech('SELECT current_user::text AS "user"')).toEqual([{ user: LOGIN }]);
+    await expect(signInAsTech('not-the-password').$queryRawUnsafe('SELECT 1')).rejects.toThrow(/password authentication failed/);
+
+    const attributes = await db.$queryRawUnsafe<Row[]>(`SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls, rolinherit, rolcanlogin, rolconnlimit FROM pg_roles WHERE rolname = '${LOGIN}'`);
+    expect(attributes).toEqual([{ rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolreplication: false, rolbypassrls: false, rolinherit: false, rolcanlogin: true, rolconnlimit: 20 }]);
+    const limits = await asTech(`SELECT current_setting('default_transaction_read_only') AS read_only, current_setting('statement_timeout') AS statement_timeout, current_setting('lock_timeout') AS lock_timeout, current_setting('idle_in_transaction_session_timeout') AS idle_in_transaction`);
+    expect(limits).toEqual([{ read_only: 'on', statement_timeout: '15s', lock_timeout: '5s', idle_in_transaction: '1min' }]);
   });
 
-  it('publishing stores the page and its HTML together, and the view exposes the documented columns', async () => {
+  it('refuses to manage anything but a plain login', async () => {
+    const [me] = await db.$queryRawUnsafe<{ user: string }[]>('SELECT current_user::text AS "user"');
+    await expect(ensureTechReader(url!, undefined, me!.user)).rejects.toThrow(/refusing to manage/);
+  });
+
+  it('lists nothing while no page is published', async () => {
+    expect(await asTech(PUBLISHED_OCCASIONS)).toEqual([]);
+    expect(await asTech(PAGE_HTML, 'diwali')).toEqual([]);
+  });
+
+  it('after a publish: query 1 lists the occasion, and query 2 returns its HTML by page_slug', async () => {
     const pages = new PrismaPageRepository(db);
     const published = await pages.publish(pageId, 1, { published: {}, publishedSlug: 'diwali', publishedById: userId }, revision, { html: '<style></style>\n<div>v1</div>\n<script></script>', seo });
     expect(published?.status).toBe('PUBLISHED');
 
-    const [row] = await view();
-    expect(Object.keys(row!)).toEqual(['slug', 'source', 'version', 'html', 'meta_title', 'meta_description', 'meta_keywords', 'canonical_url', 'no_index', 'og_image', 'json_ld', 'published_at', 'updated_at']);
-    expect(row).toMatchObject({
-      slug: 'diwali',
+    const list = await asTech(PUBLISHED_OCCASIONS);
+    expect(list).toHaveLength(1); // Holi has no published page, so it is not listed
+    expect(Object.keys(list[0]!)).toEqual(['occasion_slug', 'occasion_name', 'page_slug', 'version', 'published_at', 'updated_at']);
+    expect(list[0]).toMatchObject({ occasion_slug: 'diwali-gift-cards', occasion_name: 'Diwali Gift Cards', page_slug: 'diwali', version: 1 });
+
+    const rows = await asTech(PAGE_HTML, list[0]!.page_slug);
+    expect(rows).toHaveLength(1);
+    expect(Object.keys(rows[0]!)).toEqual(['page_slug', 'source', 'version', 'html', 'meta_title', 'meta_description', 'meta_keywords', 'canonical_url', 'no_index', 'og_image', 'json_ld', 'published_at', 'updated_at']);
+    expect(rows[0]).toMatchObject({
+      page_slug: 'diwali',
       source: 'OCCASION_PAGE_BUILDER',
       version: 1,
       html: '<style></style>\n<div>v1</div>\n<script></script>',
@@ -94,36 +189,94 @@ describe.skipIf(!url)('database contract (integration.published_pages)', () => {
       og_image: '',
       json_ld: seo.jsonLd,
     });
-    expect(row!.published_at).toBeInstanceOf(Date);
+    expect(rows[0]!.published_at).toBeInstanceOf(Date);
+  });
+
+  it('the tech login reads only what the two queries need, and cannot change anything', async () => {
+    await expect(asTech('SELECT count(*) FROM "Occasion"')).resolves.toHaveLength(1);
+    await expect(asTech('SELECT "id", "occasionId" FROM "Page"')).resolves.toHaveLength(1);
+    // Of "Page" only the two linking columns: drafts and unpublished content stay private.
+    for (const sql of ['SELECT * FROM "Page"', 'SELECT "draft" FROM "Page"', 'SELECT "title" FROM "Page"']) {
+      await expect(asTech(sql), sql).rejects.toThrow(/permission denied/);
+    }
+    for (const table of ['User', 'AuditLog', 'Brand', 'Media', 'PageRevision', 'SiteSetting', 'Template', '_prisma_migrations']) {
+      await expect(asTech(`SELECT count(*) FROM "${table}"`), table).rejects.toThrow(/permission denied/);
+    }
+    const writes = [
+      `UPDATE "PagePublication" SET "html" = 'changed'`,
+      `DELETE FROM "PagePublication"`,
+      `DELETE FROM "Page"`,
+      `INSERT INTO "Occasion" ("id", "slug", "name", "shortName", "pageUrl", "theme", "updatedAt") VALUES (gen_random_uuid(), 'x', 'x', 'x', 'x', '{}', now())`,
+      'CREATE TABLE intruder (id int)',
+      'DROP TABLE "PagePublication"',
+    ];
+    for (const sql of writes) {
+      // Refused as it comes (its transactions are read-only) ...
+      await expect(tech.$executeRawUnsafe(sql), sql).rejects.toThrow(/read-only transaction|permission denied|must be owner/);
+      // ... and still refused when the session switches that off: it simply has no right to write.
+      await expect(
+        tech.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe('SET TRANSACTION READ WRITE');
+          await tx.$executeRawUnsafe(sql);
+        }),
+        sql,
+      ).rejects.toThrow(/permission denied|must be owner/);
+    }
+    expect((await html())!.html).toContain('v1'); // nothing was changed
+  });
+
+  it('every start-up puts the rights back to exactly these, whatever was granted in between', async () => {
+    await db.$executeRawUnsafe(`GRANT SELECT ON "User", "Page" TO ${LOGIN}`);
+    await db.$executeRawUnsafe(`GRANT INSERT, UPDATE, DELETE ON "PagePublication" TO ${LOGIN}`);
+    await expect(asTech('SELECT count(*) FROM "User"')).resolves.toHaveLength(1);
+
+    expect(await ensureTechReader(url!, password, LOGIN)).toEqual({ warnings: [] });
+    await expect(asTech('SELECT count(*) FROM "User"')).rejects.toThrow(/permission denied/);
+    await expect(asTech('SELECT "draft" FROM "Page"')).rejects.toThrow(/permission denied/);
+    const tables = await db.$queryRawUnsafe<Row[]>(`SELECT table_name::text AS "table", privilege_type::text AS "right" FROM information_schema.role_table_grants WHERE grantee = '${LOGIN}' ORDER BY 1, 2`);
+    expect(tables).toEqual([{ table: 'Occasion', right: 'SELECT' }, { table: 'PagePublication', right: 'SELECT' }]);
+    const columns = await db.$queryRawUnsafe<Row[]>(`SELECT column_name::text AS "column", privilege_type::text AS "right" FROM information_schema.column_privileges WHERE grantee = '${LOGIN}' AND table_name = 'Page' ORDER BY 1, 2`);
+    expect(columns).toEqual([{ column: 'id', right: 'SELECT' }, { column: 'occasionId', right: 'SELECT' }]);
+    expect(await asTech(PUBLISHED_OCCASIONS)).toHaveLength(1); // and the two queries still work
   });
 
   it('a stale publish changes nothing', async () => {
     const pages = new PrismaPageRepository(db);
     expect(await pages.publish(pageId, 7, { published: {}, publishedSlug: 'diwali', publishedById: userId }, revision, { html: 'stale', seo })).toBeNull();
-    expect((await view())[0]!.html).toContain('v1');
+    expect((await html())!.html).toContain('v1');
   });
 
   it('a refresh updates changed HTML, skips identical HTML, and ignores other versions', async () => {
     const publications = new PrismaPublicationRepository(db);
-    const before = (await view())[0]!.updated_at as Date;
+    const before = (await html())!.updated_at as Date;
 
     expect(await publications.refresh(pageId, 1, async () => ({ html: '<style></style>\n<div>v1</div>\n<script></script>', seo }))).toBe('unchanged');
-    expect(((await view())[0]!.updated_at as Date).getTime()).toBe(before.getTime());
+    expect(((await html())!.updated_at as Date).getTime()).toBe(before.getTime());
 
     expect(await publications.refresh(pageId, 1, async () => ({ html: 'new discount', seo }))).toBe('updated');
-    const [row] = await view();
+    const row = await html();
     expect(row!.html).toBe('new discount');
     expect((row!.updated_at as Date).getTime()).toBeGreaterThan(before.getTime());
 
     expect(await publications.refresh(pageId, 2, async () => ({ html: 'wrong version', seo }))).toBe('gone');
-    expect((await view())[0]!.html).toBe('new discount');
+    expect((await html())!.html).toBe('new discount');
   });
 
-  it('unpublishing removes the row in the same step, and a late refresh cannot bring it back', async () => {
+  it('unpublishing removes the page from both queries in the same step, and a late refresh cannot bring it back', async () => {
     const page = await new PrismaPageRepository(db).setStatus(pageId, 'DRAFT', { clearPublished: true });
     expect(page).toMatchObject({ status: 'DRAFT', publishedSlug: null });
-    expect(await view()).toEqual([]);
+    expect(await asTech(PUBLISHED_OCCASIONS)).toEqual([]);
+    expect(await asTech(PAGE_HTML, 'diwali')).toEqual([]);
     expect(await new PrismaPublicationRepository(db).refresh(pageId, 1, async () => ({ html: 'late', seo }))).toBe('gone');
-    expect(await view()).toEqual([]);
+    expect(await asTech(PAGE_HTML, 'diwali')).toEqual([]);
+  });
+
+  it('a changed password in the settings replaces the login\'s password at the next start-up', async () => {
+    const next = randomBytes(18).toString('base64');
+    expect(await ensureTechReader(url!, next, LOGIN)).toEqual({ warnings: [] });
+    await expect(signInAsTech(password).$queryRawUnsafe('SELECT 1')).rejects.toThrow(/password authentication failed/);
+    const again = signInAsTech(next);
+    expect(await again.$queryRawUnsafe('SELECT 1 AS ok')).toEqual([{ ok: 1 }]);
+    await again.$disconnect();
   });
 });

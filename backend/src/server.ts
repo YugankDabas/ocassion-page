@@ -6,10 +6,10 @@ import { configurationProblems, loadEnv } from './config/env';
 import { runMigrations } from './config/migrate';
 import { fetchSecret } from './config/secrets';
 import { createContainer, type Container } from './container';
-import { ensureIntegrationView } from './integrationView';
 import { createLogger } from './lib/logger';
 import { BcryptPasswordHasher } from './services/security';
 import { BUILT_AT, newStartupReport, startingHandler } from './startup';
+import { ensureTechReader, TECH_READER } from './techAccess';
 
 const RETRY_MS = 15_000;
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'];
@@ -30,32 +30,34 @@ function main() {
   server.listen(port, () => logger.info({ port, builtAt: BUILT_AT }, 'Occasion admin API listening'));
 
   /**
+   * The tech team's read-only database login (prisma/tech_reader.sql). It never affects the panel:
+   * whatever could not be done, typically because this database user may not create logins, is
+   * reported on /healthz and tried again.
+   */
+  const setUpTechReader = async (c: Container): Promise<void> => {
+    let retryMs = 60_000;
+    try {
+      const { warnings } = await ensureTechReader(c.env.DATABASE_URL, c.env.TECH_READER_PASSWORD);
+      report.techReaderError = warnings.length ? warnings.join('; ') : null;
+      if (!warnings.length) return c.env.TECH_READER_PASSWORD ? logger.info({ login: TECH_READER }, 'Tech login ready (read-only)') : undefined;
+      logger.warn({ login: TECH_READER, warnings }, 'Tech login is not fully set up');
+      retryMs = 10 * 60_000;
+    } catch (err) {
+      report.techReaderError = err instanceof Error ? err.message : String(err);
+      logger.error({ err, login: TECH_READER }, 'Could not set up the tech login');
+    }
+    setTimeout(() => void setUpTechReader(c), retryMs).unref();
+  };
+
+  /**
    * Secret → settings → database, repeated every 15 seconds until all three succeed. Nothing here
    * stops the container: a secret that cannot be read, a missing setting, a database that is not
    * reachable or a user without rights is logged, reported on /healthz and tried again, so fixing
    * the cause in AWS is enough (the secret is read again on every attempt).
    */
-  /**
-   * The view the gyftr.com backend reads. It needs a database-level right the panel does not otherwise
-   * need, so a failure here is reported on /healthz and tried again every minute; it never keeps the panel down.
-   */
-  const ensureView = async (c: Container): Promise<void> => {
-    try {
-      await ensureIntegrationView(c.prisma);
-      if (report.integrationViewError) logger.info('Integration view created');
-      report.integrationViewError = null;
-    } catch (err) {
-      report.integrationViewError = err instanceof Error ? err.message : String(err);
-      logger.error({ err }, 'Could not create the view integration.published_pages; retrying in a minute');
-      setTimeout(() => void ensureView(c), 60_000).unref();
-    }
-  };
-
   const start = async () => {
     let appliedSettings = '';
     for (let attempt = 1; ; attempt++) {
-      report.attempts = attempt;
-      report.lastAttemptAt = new Date().toISOString();
       let stage: 'secrets' | 'configuration' | 'database' = 'secrets';
       try {
         report.secretsManager = await fetchSecret(); // AWS Secrets Manager → process.env (locally: .env only)
@@ -86,7 +88,7 @@ function main() {
         await container.prisma.$connect();
         // New database: occasions, default site settings and the first administrator. Does nothing afterwards.
         await bootstrap(container.prisma, env.PAGE_PUBLIC_BASE_URL, new BcryptPasswordHasher(), logger);
-        await ensureView(container);
+        void setUpTechReader(container);
         report.databaseError = null;
         report.ready = true;
         logger.info('Database ready');
