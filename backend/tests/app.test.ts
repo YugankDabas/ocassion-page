@@ -1,7 +1,7 @@
 import type { Server } from 'node:http';
 import type { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createApp } from '../src/app';
+import { createApp, databaseFailureReason } from '../src/app';
 import { createContainer } from '../src/container';
 import { loadEnv } from '../src/config/env';
 import { createLogger } from '../src/lib/logger';
@@ -63,12 +63,25 @@ describe('while the database is being prepared', () => {
       expect(((await login.json()) as { error: { code: string } }).error.code).toBe('STARTING');
 
       startup.error = 'connection refused';
-      expect(await (await fetch(`${url}/healthz`)).json()).toEqual({ status: 'ok', database: 'unavailable' });
+      expect(await (await fetch(`${url}/healthz`)).json()).toEqual({ status: 'ok', database: 'unavailable', reason: 'other' });
       startup.ready = true;
       expect((await fetch(`${url}/api/v1/auth/me`, { headers: { Origin: frontendOrigin } })).status).toBe(401); // the API itself answers now
     } finally {
       await new Promise<void>((resolve) => starting.close(() => resolve()));
     }
+  });
+});
+
+describe('reason shown by the health check', () => {
+  it('is a category and Prisma code only, never the message', () => {
+    const secretish = 'Database migration failed: Error: P1001: Can\'t reach database server at `prod-db.abc.ap-south-1.rds.amazonaws.com:5432` for user admin_user';
+    expect(databaseFailureReason(secretish)).toBe('cannot_reach_database_server (P1001)');
+    expect(databaseFailureReason('P1000: Authentication failed against database server, the provided database credentials for `u` are not valid')).toBe('wrong_user_or_password (P1000)');
+    expect(databaseFailureReason('Error: P1011: Error opening a TLS connection: self-signed certificate in certificate chain')).toBe('tls_error (P1011)');
+    expect(databaseFailureReason('ERROR: permission denied for schema public')).toBe('permission_denied');
+    expect(databaseFailureReason('P1003: Database `occasion-admin` does not exist')).toBe('database_does_not_exist (P1003)');
+    expect(databaseFailureReason('Error loading shared library libssl.so.3: No such file or directory')).toBe('migration_tool_cannot_run');
+    expect(databaseFailureReason('something unexpected with password=hunter2')).toBe('other');
   });
 });
 

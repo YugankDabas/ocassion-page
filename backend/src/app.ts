@@ -10,6 +10,25 @@ import { errorHandler, notFoundHandler } from './http/middleware';
 import { adminRouter } from './http/routes';
 import { LocalDiskStorage } from './storage/StorageProvider';
 
+/**
+ * Turns a database start-up error into a short, non-sensitive category for /healthz.
+ * Only fixed words and Prisma's public error code (P1000…) are returned, never the message itself.
+ */
+export function databaseFailureReason(message: string): string {
+  const code = /\bP\d{4}\b/.exec(message)?.[0];
+  const category =
+    /P1001|P1002|P1008|Can't reach database server|timed out|ETIMEDOUT|ECONNREFUSED|ENOTFOUND|EAI_AGAIN/i.test(message) ? 'cannot_reach_database_server'
+    : /P1000|authentication failed|password authentication/i.test(message) ? 'wrong_user_or_password'
+    : /P1011|\bTLS\b|\bSSL\b|certificate/i.test(message) ? 'tls_error'
+    : /P1010|permission denied|must be owner|denied access/i.test(message) ? 'permission_denied'
+    : /P1003|database .* does not exist/i.test(message) ? 'database_does_not_exist'
+    : /P3009|P3018|failed migrations|migration.*failed to apply/i.test(message) ? 'migration_failed'
+    : /Query engine|schema engine|libssl|openssl|ENOENT|EACCES|spawn|Cannot find module/i.test(message) ? 'migration_tool_cannot_run'
+    : /Database configuration is incomplete/i.test(message) ? 'database_settings_missing'
+    : 'other';
+  return code ? `${category} (${code})` : category;
+}
+
 /** Whether the database has been prepared (schema, first-run data). Shared with server.ts. */
 export interface StartupState {
   ready: boolean;
@@ -85,7 +104,9 @@ export function createApp(c: Container, startup: StartupState = { ready: true, e
   // Health check for the load balancer.
   // Answers as soon as the process is up, so the load balancer keeps routing and the panel gets a real reply.
   app.get('/healthz', (_req, res) => {
-    res.json({ status: 'ok', database: startup.ready ? 'ready' : startup.error ? 'unavailable' : 'starting' });
+    if (startup.ready) return res.json({ status: 'ok', database: 'ready' });
+    // `reason` is a short category (never the message, host, user or password), so the cause can be seen without log access.
+    res.json({ status: 'ok', database: startup.error ? 'unavailable' : 'starting', ...(startup.error ? { reason: databaseFailureReason(startup.error) } : {}) });
   });
 
   // Admin API. The panel is served from the same origin, so no CORS is enabled.
