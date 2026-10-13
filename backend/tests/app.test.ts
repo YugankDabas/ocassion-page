@@ -1,10 +1,11 @@
 import type { Server } from 'node:http';
 import type { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createApp, databaseFailureReason } from '../src/app';
+import { createApp } from '../src/app';
 import { createContainer } from '../src/container';
 import { loadEnv } from '../src/config/env';
 import { createLogger } from '../src/lib/logger';
+import { databaseFailureReason, newStartupReport } from '../src/startup';
 
 const frontendOrigin = 'https://occasion-admin.gyftr.net';
 // No database here: these tests are about origins only, and say so if a request ever reaches for one.
@@ -46,7 +47,7 @@ afterAll(async () => {
 describe('while the database is being prepared', () => {
   it('answers the health check and tells the panel it is starting, with CORS headers', async () => {
     const env = loadEnv({ NODE_ENV: 'test', DATABASE_URL: 'postgresql://localhost/occasion_admin', JWT_SECRET: 'x'.repeat(48), PAGE_PUBLIC_BASE_URL: 'https://www.gyftr.com/occasion', PUBLIC_UPLOADS_BASE_URL: 'http://localhost:4545/uploads', ADMIN_FRONTEND_ORIGIN: frontendOrigin });
-    const startup = { ready: false, error: null as string | null };
+    const startup = newStartupReport();
     const starting = createApp(createContainer(env, createLogger('silent', false), prisma), startup).listen(0, '127.0.0.1');
     await new Promise<void>((resolve) => starting.once('listening', resolve));
     const address = starting.address();
@@ -55,15 +56,15 @@ describe('while the database is being prepared', () => {
     try {
       const health = await fetch(`${url}/healthz`);
       expect(health.status).toBe(200);
-      expect(await health.json()).toEqual({ status: 'ok', database: 'starting' });
+      expect(await health.json()).toMatchObject({ status: 'ok', database: 'starting', errors: [] });
 
       const login = await fetch(`${url}/api/v1/auth/login`, { method: 'POST', headers: { Origin: frontendOrigin, 'content-type': 'application/json' }, body: '{}' });
       expect(login.status).toBe(503);
       expect(login.headers.get('access-control-allow-origin')).toBe(frontendOrigin); // the browser can read the reply
       expect(((await login.json()) as { error: { code: string } }).error.code).toBe('STARTING');
 
-      startup.error = 'connection refused';
-      expect(await (await fetch(`${url}/healthz`)).json()).toEqual({ status: 'ok', database: 'unavailable', reason: 'other' });
+      startup.databaseError = 'connection refused';
+      expect(await (await fetch(`${url}/healthz`)).json()).toMatchObject({ status: 'ok', database: 'unavailable', reason: 'other', errors: ['Database: connection refused'] });
       startup.ready = true;
       expect((await fetch(`${url}/api/v1/auth/me`, { headers: { Origin: frontendOrigin } })).status).toBe(401); // the API itself answers now
     } finally {

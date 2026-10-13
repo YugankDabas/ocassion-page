@@ -1,6 +1,3 @@
--- CreateSchema
-CREATE SCHEMA IF NOT EXISTS "public";
-
 -- CreateEnum
 CREATE TYPE "Role" AS ENUM ('ADMIN', 'PUBLISHER', 'EDITOR');
 
@@ -253,30 +250,6 @@ ALTER TABLE "Media" ADD CONSTRAINT "Media_uploadedById_fkey" FOREIGN KEY ("uploa
 -- AddForeignKey
 ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_actorId_fkey" FOREIGN KEY ("actorId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- ---------------------------------------------------------------------------
--- Integration contract for the gyftr.com backend.
---
--- The gyftr.com backend reads this one view (with database access granted by DevOps).
--- One row per PUBLISHED page; a row exists only while the page is published.
--- Look up by slug: the primary key of "PagePublication", so one index lookup.
---   row    -> the page was built in the Occasion Page Builder: render `html`
---   no row -> not ours: gyftr.com serves its own page
--- ---------------------------------------------------------------------------
-CREATE SCHEMA integration;
-
-CREATE VIEW integration.published_pages AS
-SELECT
-    pp."slug"                          AS slug,
-    pp."source"                        AS source,
-    pp."version"                       AS version,
-    pp."html"                          AS html,
-    pp."seo" ->> 'title'               AS meta_title,
-    pp."seo" ->> 'description'         AS meta_description,
-    pp."seo" ->> 'keywords'            AS meta_keywords,
-    pp."seo" ->> 'canonicalUrl'        AS canonical_url,
-    (pp."seo" ->> 'noIndex')::boolean  AS no_index,
-    pp."seo" ->> 'ogImage'             AS og_image,
-    pp."seo" -> 'jsonLd'               AS json_ld,
-    pp."publishedAt"                   AS published_at,
-    pp."renderedAt"                    AS updated_at
-FROM "PagePublication" pp;
+-- The view the gyftr.com backend reads (integration.published_pages) is not created here: the application
+-- creates it at start-up (src/integrationView.ts), so this migration needs nothing beyond the right to
+-- create tables.

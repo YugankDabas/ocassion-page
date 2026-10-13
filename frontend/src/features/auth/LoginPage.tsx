@@ -51,6 +51,9 @@ export function LoginPage() {
             Sign in
           </Button>
         </form>
+        <p className="muted small" style={{ margin: '14px 0 0', textAlign: 'center' }}>
+          Build {new Date(__BUILD_TIME__).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+        </p>
       </div>
     </div>
   );

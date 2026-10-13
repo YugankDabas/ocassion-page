@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { applyDatabaseUrl, describeDatabaseTarget, placeholderDatabaseSettings } from '../src/config/database';
 import { configurationProblems, loadEnv } from '../src/config/env';
-import { applySecret, loadSecretsIntoEnv, parseSecret } from '../src/config/secrets';
+import { applySecret, fetchSecret, keysFromSecret, loadSecretsIntoEnv, parseSecret } from '../src/config/secrets';
 
 const secretsManager = vi.hoisted(() => ({ send: vi.fn() }));
 vi.mock('@aws-sdk/client-secrets-manager', () => ({
@@ -88,6 +88,42 @@ describe('Secrets Manager secret', () => {
   it('stops the start-up with a clear message when the secret cannot be read', async () => {
     secretsManager.send.mockRejectedValue(new Error('AccessDenied'));
     await expect(loadSecretsIntoEnv({ AWS_SECRET_NAME: 'occasion-admin/staging' }, 1)).rejects.toThrow('Could not read secret "occasion-admin/staging" from AWS Secrets Manager: AccessDenied');
+  });
+});
+
+describe('reading the secret again', () => {
+  it('reports what was read by name, and a corrected secret replaces the earlier values without a restart', async () => {
+    const env: NodeJS.ProcessEnv = { AWS_SECRET_NAME: 'occasion-admin', PORT: '4545' };
+    secretsManager.send.mockReset();
+    secretsManager.send.mockResolvedValueOnce({ SecretString: JSON.stringify({ DB_HOST: 'db.internal', DB_NAME: 'occasion-admin', DB_USER: 'occasion', DB_PASSWORD: 'wrong-password', S3_BUCKET: 'old-bucket', PORT: '9999' }) });
+    const first = await loadSecretsIntoEnv(env);
+    expect(first).toEqual({ used: true, secretName: 'occasion-admin', fetched: true, validJson: true, keysRead: ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'S3_BUCKET'], error: null });
+    expect(JSON.stringify(first)).not.toContain('wrong-password');
+    expect([...keysFromSecret(env)]).toEqual(first.keysRead);
+    expect(env.PORT).toBe('4545'); // the task environment still wins
+    expect(env.DATABASE_URL).toContain(':wrong-password@db.internal');
+
+    // DevOps corrects the password and removes the bucket in Secrets Manager.
+    secretsManager.send.mockResolvedValueOnce({ SecretString: JSON.stringify({ DB_HOST: 'db.internal', DB_NAME: 'occasion-admin', DB_USER: 'occasion', DB_PASSWORD: 'right-password' }) });
+    const second = await loadSecretsIntoEnv(env);
+    expect(second.keysRead).toEqual(['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']);
+    expect(env.DB_PASSWORD).toBe('right-password');
+    expect(env.S3_BUCKET).toBeUndefined();
+    expect(env.DATABASE_URL).toContain(':right-password@db.internal'); // rebuilt from the new fields
+  });
+
+  it('returns the failure instead of throwing, so start-up can report it and try again', async () => {
+    secretsManager.send.mockReset();
+    secretsManager.send.mockRejectedValue(new Error('User is not authorized to perform: secretsmanager:GetSecretValue'));
+    expect(await fetchSecret({ AWS_SECRET_NAME: 'occasion-admin' }, 1)).toEqual({
+      used: true,
+      secretName: 'occasion-admin',
+      fetched: false,
+      validJson: null,
+      keysRead: [],
+      error: 'Could not read secret "occasion-admin" from AWS Secrets Manager: User is not authorized to perform: secretsmanager:GetSecretValue',
+    });
+    expect(await fetchSecret({})).toMatchObject({ used: false, fetched: false, error: null }); // local development: no secret
   });
 });
 

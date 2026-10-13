@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureIntegrationView } from '../src/integrationView';
 import { PrismaPageRepository } from '../src/repositories/prisma/PrismaPageRepository';
 import { PrismaPublicationRepository } from '../src/repositories/prisma/PrismaPublicationRepository';
 import type { PageSeo } from '../src/render/seo';
@@ -32,6 +33,10 @@ describe.skipIf(!url)('database contract (integration.published_pages)', () => {
 
     const prismaCli = createRequire(import.meta.url).resolve('prisma/build/index.js');
     execFileSync(process.execPath, [prismaCli, 'migrate', 'deploy'], { env: { ...process.env, DATABASE_URL: url }, stdio: 'pipe' });
+
+    // The application creates the view at start-up; doing it twice must be harmless.
+    await ensureIntegrationView(db);
+    await ensureIntegrationView(db);
 
     await db.user.create({ data: { id: userId, email: 'a@gyftr.net', name: 'A', passwordHash: 'x' } });
     const occasion = await db.occasion.create({ data: { slug: 'diwali', name: 'Diwali', shortName: 'Diwali', pageUrl: 'https://www.gyftr.com/occasion/diwali', theme: {} } });

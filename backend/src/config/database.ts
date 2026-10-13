@@ -27,12 +27,23 @@ export function readSetting(env: NodeJS.ProcessEnv, name: string): string | unde
   return undefined;
 }
 
-/** Sets env.DATABASE_URL from the DB_* fields unless a DATABASE_URL is already given. */
+/** The URL this module built for an environment, to tell it from one that was given. */
+const derivedUrls = new WeakMap<NodeJS.ProcessEnv, string>();
+
+/** True when DATABASE_URL was assembled from the DB_* fields (not given directly). */
+export const isDerivedDatabaseUrl = (env: NodeJS.ProcessEnv = process.env): boolean => !!env.DATABASE_URL && env.DATABASE_URL === derivedUrls.get(env);
+
+/**
+ * Sets env.DATABASE_URL from the DB_* fields unless a DATABASE_URL is already given.
+ * Safe to call again: a URL built on an earlier call is rebuilt from the current fields.
+ */
 export function applyDatabaseUrl(env: NodeJS.ProcessEnv = process.env): void {
-  if (readSetting(env, 'DATABASE_URL')) {
-    env.DATABASE_URL = readSetting(env, 'DATABASE_URL');
+  const given = readSetting(env, 'DATABASE_URL');
+  if (given && !isDerivedDatabaseUrl(env)) {
+    env.DATABASE_URL = given;
     return;
   }
+  delete env.DATABASE_URL;
   const missing = REQUIRED.filter((key) => !readSetting(env, key));
   if (missing.length === REQUIRED.length) return; // nothing configured: the settings validation reports it
   if (missing.length) throw new Error(`Database configuration is incomplete. Missing: ${missing.join(', ')}`);
@@ -52,6 +63,7 @@ export function applyDatabaseUrl(env: NodeJS.ProcessEnv = process.env): void {
   // At most 10 connections per container.
   const options = `${LOCAL_HOSTS.has(host.toLowerCase()) ? '' : 'sslmode=require&sslaccept=accept_invalid_certs&'}connection_limit=10&pool_timeout=10`;
   env.DATABASE_URL = `postgresql://${user}:${password}@${host}:${port}/${name}?${options}`;
+  derivedUrls.set(env, env.DATABASE_URL);
 }
 
 /**
@@ -59,11 +71,11 @@ export function applyDatabaseUrl(env: NodeJS.ProcessEnv = process.env): void {
  * real value. They look valid to a parser, so the connection would just fail with a login error.
  */
 export function placeholderDatabaseSettings(env: NodeJS.ProcessEnv = process.env): string[] {
-  return DB_KEYS.filter((key) => {
-    const value = readSetting(env, key);
-    return !!value && /^<.*>$|^(?:changeme|change-me|todo|xxx+|replace[-_ ]?me)$/i.test(value);
-  });
+  return DB_KEYS.filter((key) => isPlaceholderValue(readSetting(env, key)));
 }
+
+/** A value copied from a template ("<database-user>", "changeme") rather than a real one. */
+export const isPlaceholderValue = (value: string | undefined): boolean => !!value && /^<.*>$|^(?:changeme|change-me|todo|xxx+|replace[-_ ]?me)$/i.test(value);
 
 /** Where the application connects, without the password: for the start-up log. */
 export function describeDatabaseTarget(databaseUrl: string): { host: string; port: string; database: string; user: string; tls: boolean } | null {

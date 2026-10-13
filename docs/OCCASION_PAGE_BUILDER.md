@@ -121,7 +121,7 @@ Images are **not** stored in the database. They are in S3; the database holds th
 
 The view `integration.published_pages` is a plain `SELECT` over `PagePublication` that splits the `seo`
 JSON into the `meta_*` columns. Table definitions: [`backend/prisma/schema.prisma`](../backend/prisma/schema.prisma).
-The SQL that creates the tables and the view:
+The SQL that creates the tables (the view is created by `backend/src/integrationView.ts` at start-up):
 [`backend/prisma/migrations/20261011120000_init/migration.sql`](../backend/prisma/migrations/20261011120000_init/migration.sql).
 
 Why the page is stored twice (`Page.draft` / `Page.published` JSON and `PagePublication.html`): the JSON is
@@ -221,10 +221,12 @@ All database access is in `src/repositories/`. No other file runs a query.
 | Path | What it does |
 | --- | --- |
 | `prisma/schema.prisma` | The 10 tables and their columns. |
-| `prisma/migrations/…_init/migration.sql` | SQL that creates the tables and the view. |
+| `prisma/migrations/…_init/migration.sql` | SQL that creates the tables. Needs only the right to create tables in schema `public`. |
 | `prisma/migrations/…_user_must_change_password/migration.sql` | Adds `User.mustChangePassword`. |
 | `assets/render/` | `page.css` (the page stylesheet) and the GyFTR logos used in preview / download. |
 | **`src/server.ts`** | Entry point: read Secrets Manager, build the database connection, validate settings, run migrations, prepare a new database, start the server. |
+| **`src/integrationView.ts`** | Creates the schema `integration` and the view `integration.published_pages` at start-up. Needs `CREATE` on the database; without it the panel still works and `/healthz` says what to grant. |
+| **`src/startup.ts`** | The start-up report behind `GET /healthz`: whether the secret was read, which settings were found (names only), and what is wrong. |
 | **`src/bootstrap.ts`** | Runs at every start-up; on a new database it creates the 37 occasions, the default header / footer settings and the first administrator. Does nothing once they exist. |
 | `src/app.ts` | The Express app: logging, security headers, `/healthz`, `/api/v1`, serves the panel. |
 | `src/container.ts` | Wires repositories, services and controllers together. |
@@ -308,17 +310,31 @@ Manager secret; the container is told only the secret's name.
 
 ### 8.3 What happens at start-up
 
-1. `AWS_SECRET_NAME` is read → the secret is fetched from Secrets Manager (3 attempts).
+The server answers from the first moment and never exits because of a configuration or database problem.
+It repeats these steps every 15 seconds until all succeed, so fixing the cause in AWS is enough: no redeploy.
+
+1. `AWS_SECRET_NAME` is read and the secret is fetched from Secrets Manager (read again on every attempt).
 2. The known keys are copied into the environment; the database connection is built from the `DB_*` fields.
-3. Every setting is validated. A missing database field or JWT secret stops the start-up with a message naming it,
-   for example `Database configuration is incomplete. Missing: DB_PASSWORD`. A missing `S3_BUCKET` or panel
-   address does not: the service starts, logs `Configuration problem`, and only image upload is unavailable.
-4. The server starts answering at once. `GET /healthz` returns `{"status":"ok","database":"starting|ready|unavailable"}`.
-5. In the background the database schema is created or updated (`prisma/migrations`), then a new database is
-   prepared: occasions, default site settings, the first administrator (section 9.1). If the database cannot be
-   reached, or its user cannot create tables, the reason is logged (`Database is not ready`) and it retries every
-   15 seconds; until then the API answers `503 STARTING` instead of the container restarting.
-6. Published pages are re-checked once.
+3. Every setting is validated.
+4. The database schema is created or updated (`prisma/migrations`). This needs the right to create tables in
+   schema `public`:  `GRANT USAGE, CREATE ON SCHEMA public TO "<DB_USER>";`  (on PostgreSQL 15+,
+   `GRANT ALL ON DATABASE` does not include it). A failed earlier attempt is retried automatically.
+5. A new database is prepared: occasions, default site settings, the first administrator (section 9.1).
+6. The view for gyftr.com, `integration.published_pages`, is created. This needs `GRANT CREATE ON DATABASE
+   "<DB_NAME>" TO "<DB_USER>";`. Without it the panel still works, the view is retried every minute and
+   `/healthz` shows the statement to run.
+
+`GET /healthz` always answers 200 and reports, without ever showing a value:
+
+| Field | Meaning |
+| --- | --- |
+| `database` | `ready`, `starting`, `unavailable` (with `reason`, `fix` and the error text) or `not_configured` |
+| `builtAt` | When the running build was made, to tell which build is deployed |
+| `secretsManager` | Whether the secret was fetched, whether it was valid JSON, and the names of the settings read from it |
+| `settings` | Each setting: set (and from where), missing, or still a placeholder |
+| `allRequiredSettingsPresent` | `true` when nothing required is missing |
+| `integrationView` | `ready`, `unavailable` or `pending` |
+| `warnings`, `errors` | What is wrong, with passwords and keys removed. Error texts and the connection target are shown only until the service is ready |
 
 ### 8.4 Optional settings (defaults)
 
