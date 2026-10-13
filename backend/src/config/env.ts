@@ -37,7 +37,7 @@ const settings = z.object({
   SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(72).default(8),
 
   /**
-   * Password of the read-only database login the gyftr.com tech team connects with (occasion_tech_reader).
+   * Password of the read-only database login the gyftr.com tech team connects with (tech_reader).
    * When set, the login is created at start-up by prisma/tech_reader.sql. Optional: without it no login is created.
    */
   TECH_READER_PASSWORD: z.string().min(16, 'TECH_READER_PASSWORD must be at least 16 characters (use: openssl rand -base64 24)').optional(),

@@ -14,7 +14,7 @@ import { poolConfig } from './db';
  * start-up. Its password is the setting TECH_READER_PASSWORD. Creating the login needs a
  * special database right once; after that, running the script changes nothing and needs none.
  */
-export const TECH_READER = 'occasion_tech_reader';
+export const TECH_READER = 'tech_reader';
 
 const SCRIPT = path.resolve('prisma', 'tech_reader.sql');
 const WARNING_PREFIX = 'tech_reader: ';

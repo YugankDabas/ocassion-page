@@ -79,7 +79,7 @@ BEGIN
 
     SELECT setconfig INTO applied FROM pg_db_role_setting WHERE setrole = r.oid AND setdatabase = 0;
     FOREACH setting IN ARRAY wanted LOOP
-        IF applied IS NULL OR NOT (setting = ANY (applied)) THEN
+        IF applied IS NULL OR NOT (setting = ANY (lower(applied::text)::text[])) THEN
             BEGIN
                 EXECUTE format('ALTER ROLE %I SET %s TO %L', login, split_part(setting, '=', 1), split_part(setting, '=', 2));
             EXCEPTION WHEN insufficient_privilege THEN

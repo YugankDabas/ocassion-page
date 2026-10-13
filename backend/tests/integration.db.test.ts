@@ -19,8 +19,8 @@ import { ensureTechReader } from '../src/techAccess';
  */
 const url = process.env.TEST_DATABASE_URL;
 
-/** A login of its own, so a real occasion_tech_reader on the same server is never touched. */
-const LOGIN = 'occasion_tech_reader_test';
+/** A login of its own, so a real tech_reader on the same server is never touched. */
+const LOGIN = 'tech_reader_test';
 
 /** Query 1 of docs/INTEGRATION_DATABASE.md, word for word: the occasions that have a published page. */
 const PUBLISHED_OCCASIONS = `

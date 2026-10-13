@@ -46,7 +46,7 @@ diwali-gifts-admin/
 
 ## Integration with gyftr.com (database contract)
 
-The gyftr.com backend connects to this database with its own read-only login, `occasion_tech_reader`, and reads
+The gyftr.com backend connects to this database with its own read-only login, `tech_reader`, and reads
 the published pages straight from the tables: one query lists the occasions that have a published page, the
 other returns a page's `html` (style + markup + script) and SEO values from `PagePublication` by slug. A row
 means the page was built here and is published (`source` is `OCCASION_PAGE_BUILDER`); no row means it is not ours.
@@ -119,7 +119,7 @@ variables on the ECS task definition and reads everything else from one Secrets 
 | `JWT_SECRET` | 48 random bytes (`openssl rand -base64 48`), different per environment | Signs admin sessions. |
 | `PAGE_PUBLIC_BASE_URL` | `https://www.gyftr.com/occasion` | Page URLs and canonical links are built from it. |
 | `S3_BUCKET` | Name of the media bucket | Uploaded images. The region is `AWS_REGION`; images are served from `https://<bucket>.s3.<region>.amazonaws.com`. |
-| `TECH_READER_PASSWORD` | `openssl rand -base64 24` | Optional. Password of the read-only database login for the gyftr.com tech team (`occasion_tech_reader`), created at start-up. |
+| `TECH_READER_PASSWORD` | `openssl rand -base64 24` | Optional. Password of the read-only database login for the gyftr.com tech team (`tech_reader`), created at start-up. |
 
 Keys the application does not know are ignored, so the secret can hold other things too.
 
@@ -213,7 +213,7 @@ The backend needs RDS PostgreSQL 15+ and an S3 media bucket with public object r
 The database only has to exist and be empty: the backend creates the schema at start-up (its database user needs
 rights to create tables). No one-off tasks are needed: the first start also creates the occasions, the default
 settings and the first administrator (see "First sign-in and users"); sign in and change the default password
-immediately after the first deploy. The gyftr.com backend uses the login `occasion_tech_reader` (see docs/INTEGRATION_DATABASE.md) over the network path DevOps allows.
+immediately after the first deploy. The gyftr.com backend uses the login `tech_reader` (see docs/INTEGRATION_DATABASE.md) over the network path DevOps allows.
 
 Rollback = redeploy the previous image.
 

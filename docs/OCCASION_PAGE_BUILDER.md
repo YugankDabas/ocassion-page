@@ -51,7 +51,7 @@ it does not render the site header, footer, login or cart. Those stay with gyftr
 
 ## 4. For the gyftr.com backend: the login and the two queries
 
-The gyftr.com backend connects with its own login, `occasion_tech_reader`. It can `SELECT` from `Occasion` and
+The gyftr.com backend connects with its own login, `tech_reader`. It can `SELECT` from `Occasion` and
 `PagePublication`, and from two columns of `Page` (`id`, `occasionId`): exactly what the two queries read.
 Nothing else: no drafts, no users, no audit log, and no insert, update or delete. It is limited to 20
 connections, 15 seconds per statement and 60 seconds for an idle open transaction.
@@ -124,8 +124,9 @@ The script runs at every start-up and is safe to repeat:
   `TECH_READER_PASSWORD` changes the password at the next start-up (which needs `CREATEROLE` for that start-up).
 - Without `TECH_READER_PASSWORD`, no login is created.
 
-The alternative where the database administrator creates the login by hand, and how to end the access, are in
-`docs/INTEGRATION_DATABASE.md` ("How the login is created").
+On staging the panel's database user may not create logins, so the database administrator created `tech_reader`
+by hand and `TECH_READER_PASSWORD` is left out of the secret; the panel only puts its rights back at start-up.
+The statements for that, and how to end the access, are in `docs/INTEGRATION_DATABASE.md` ("How the login is created").
 
 ## 5. The database: 10 tables
 
@@ -249,7 +250,7 @@ All database access is in `src/repositories/`. No other file runs a query.
 | `prisma/migrations/…_user_must_change_password/migration.sql` | Adds `User.mustChangePassword`. |
 | `assets/render/` | `page.css` (the page stylesheet) and the GyFTR logos used in preview / download. |
 | **`src/server.ts`** | Entry point: read Secrets Manager, build the database connection, validate settings, run migrations, prepare a new database, start the server. |
-| **`src/techAccess.ts`** | Runs `prisma/tech_reader.sql` at start-up: creates the tech team's read-only login (`occasion_tech_reader`) with the password from `TECH_READER_PASSWORD` and gives it `SELECT` on `Occasion`, `PagePublication` and two columns of `Page`. |
+| **`src/techAccess.ts`** | Runs `prisma/tech_reader.sql` at start-up: creates the tech team's read-only login (`tech_reader`) with the password from `TECH_READER_PASSWORD` and gives it `SELECT` on `Occasion`, `PagePublication` and two columns of `Page`. |
 | `prisma/tech_reader.sql` | The SQL script for that login. Run by the application only. |
 | **`src/startup.ts`** | The start-up report behind `GET /healthz`: whether the secret was read, which settings were found (names only), and what is wrong. |
 | **`src/bootstrap.ts`** | Runs at every start-up; on a new database it creates the 37 occasions, the default header / footer settings and the first administrator. Does nothing once they exist. |
@@ -351,7 +352,7 @@ It repeats these steps every 15 seconds until all succeed, so fixing the cause i
    schema `public`:  `GRANT USAGE, CREATE ON SCHEMA public TO "<DB_USER>";`  (on PostgreSQL 15+,
    `GRANT ALL ON DATABASE` does not include it). A failed earlier attempt is retried automatically.
 5. A new database is prepared: occasions, default site settings, the first administrator (section 9.1).
-6. The tech team's read-only login `occasion_tech_reader` is created from `TECH_READER_PASSWORD` if it does not
+6. The tech team's read-only login `tech_reader` is created from `TECH_READER_PASSWORD` if it does not
    exist yet, and its rights are put back to exactly what the two queries read (`prisma/tech_reader.sql`).
    A failure does not stop the panel; it is shown on `/healthz` and tried again.
 
@@ -399,7 +400,7 @@ What the backend needs:
   `secretsmanager:GetSecretValue` on the secret.
 - Health check: `GET /healthz` on both services.
 - **No one-off tasks or scripts.** The first start prepares the database (section 9.1).
-- **gyftr.com backend access**: the login `occasion_tech_reader` (section 4), over a network path DevOps allows.
+- **gyftr.com backend access**: the login `tech_reader` (section 4), over a network path DevOps allows.
 
 ### 9.1 First sign-in and users
 

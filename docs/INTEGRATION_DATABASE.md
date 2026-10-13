@@ -12,7 +12,7 @@ Nothing is pushed to gyftr.com. Publishing in the panel writes a row; unpublishi
 | --- | --- |
 | Engine | PostgreSQL (RDS) |
 | Host, port, database | Same as the panel's database, per environment |
-| Login | `occasion_tech_reader` (password shared through a secure channel) |
+| Login | `tech_reader` (password shared through a secure channel) |
 | TLS | Required (`sslmode=require`) |
 
 What the login can do:
@@ -139,18 +139,19 @@ The script runs at every start-up and is safe to repeat:
   for that one start-up.
 - Without `TECH_READER_PASSWORD`, no login is created. Removing the setting later does not remove the
   login: to end the access, the database administrator runs
-  `DROP OWNED BY occasion_tech_reader; DROP ROLE occasion_tech_reader;`
+  `DROP OWNED BY tech_reader; DROP ROLE tech_reader;`
 - What the login may do is decided by its rights. The session settings (read-only transactions, timeouts)
   only prevent accidents.
 
-If the panel's database user must never have `CREATEROLE`, the database administrator creates the login
-once instead, and the panel only gives it its rights at start-up:
+If the panel's database user may not create logins, the database administrator creates the login once
+instead, and the panel only puts its rights back at every start-up. This is how it is done on staging:
+`TECH_READER_PASSWORD` is left out of the secret there, and the password is the one the administrator set.
 
 ```sql
-CREATE ROLE occasion_tech_reader LOGIN PASSWORD '<the value of TECH_READER_PASSWORD>'
+CREATE ROLE tech_reader LOGIN PASSWORD '<the value of TECH_READER_PASSWORD>'
   NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT CONNECTION LIMIT 20;
-ALTER ROLE occasion_tech_reader SET default_transaction_read_only = 'on';
-ALTER ROLE occasion_tech_reader SET statement_timeout = '15s';
-ALTER ROLE occasion_tech_reader SET lock_timeout = '5s';
-ALTER ROLE occasion_tech_reader SET idle_in_transaction_session_timeout = '60s';
+ALTER ROLE tech_reader SET default_transaction_read_only = 'on';
+ALTER ROLE tech_reader SET statement_timeout = '15s';
+ALTER ROLE tech_reader SET lock_timeout = '5s';
+ALTER ROLE tech_reader SET idle_in_transaction_session_timeout = '60s';
 ```

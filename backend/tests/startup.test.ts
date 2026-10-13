@@ -90,7 +90,7 @@ describe('GET /healthz', () => {
     expect(body.errors[0]).toContain('Tech login: permission denied to create role | Fix: the panel\'s database user may not create logins.');
     expect(body.errors[0]).toContain('ALTER ROLE "occasion" CREATEROLE;');
     expect(body.errors[0]).toContain('ALTER ROLE "occasion" NOCREATEROLE;'); // the right is only needed once
-    const later = healthPayload({ ...report, techReaderError: 'the password of login "occasion_tech_reader" is not the configured one, and this database user may not change it' }, env);
+    const later = healthPayload({ ...report, techReaderError: 'the password of login "tech_reader" is not the configured one, and this database user may not change it' }, env);
     expect(later.errors[0]).toMatch(/^Tech login: the password .* may not change it \| Fix: see "How the login is created" in docs\/INTEGRATION_DATABASE\.md\.$/);
     expect(JSON.stringify(healthPayload({ ...report, techReaderError: 'bad tech-reader-password-123456' }, env))).not.toContain('tech-reader-password-123456');
   });
