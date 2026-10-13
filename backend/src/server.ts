@@ -1,5 +1,6 @@
 import { createApp, type StartupState } from './app';
 import { bootstrap } from './bootstrap';
+import { describeDatabaseTarget, placeholderDatabaseSettings } from './config/database';
 import { configurationProblems, loadEnv } from './config/env';
 import { runMigrations } from './config/migrate';
 import { loadSecretsIntoEnv } from './config/secrets';
@@ -23,9 +24,14 @@ async function main() {
     logger.info({ port: env.PORT }, 'Occasion admin API listening');
   });
 
+  // Host, database and user (never the password), so the log shows what is actually being connected to.
+  logger.info({ database: describeDatabaseTarget(env.DATABASE_URL) }, 'Database target');
+
   const prepareDatabase = async () => {
     for (let attempt = 1; ; attempt++) {
       try {
+        const placeholders = placeholderDatabaseSettings();
+        if (placeholders.length) throw new Error(`Database settings still contain a template placeholder instead of a real value: ${placeholders.join(', ')}`);
         if (env.RUN_MIGRATIONS_ON_START) logger.info({ result: await runMigrations(env.DATABASE_URL) }, 'Database schema is up to date');
         await container.prisma.$connect();
         // New database: occasions, default site settings and the first administrator. Does nothing afterwards.

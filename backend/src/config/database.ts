@@ -53,3 +53,24 @@ export function applyDatabaseUrl(env: NodeJS.ProcessEnv = process.env): void {
   const options = `${LOCAL_HOSTS.has(host.toLowerCase()) ? '' : 'sslmode=require&sslaccept=accept_invalid_certs&'}connection_limit=10&pool_timeout=10`;
   env.DATABASE_URL = `postgresql://${user}:${password}@${host}:${port}/${name}?${options}`;
 }
+
+/**
+ * Database settings that still hold a template placeholder such as "<database-user>" instead of a
+ * real value. They look valid to a parser, so the connection would just fail with a login error.
+ */
+export function placeholderDatabaseSettings(env: NodeJS.ProcessEnv = process.env): string[] {
+  return DB_KEYS.filter((key) => {
+    const value = readSetting(env, key);
+    return !!value && /^<.*>$|^(?:changeme|change-me|todo|xxx+|replace[-_ ]?me)$/i.test(value);
+  });
+}
+
+/** Where the application connects, without the password: for the start-up log. */
+export function describeDatabaseTarget(databaseUrl: string): { host: string; port: string; database: string; user: string; tls: boolean } | null {
+  try {
+    const url = new URL(databaseUrl);
+    return { host: url.hostname, port: url.port || '5432', database: decodeURIComponent(url.pathname.slice(1)), user: decodeURIComponent(url.username), tls: url.searchParams.get('sslmode') === 'require' };
+  } catch {
+    return null;
+  }
+}

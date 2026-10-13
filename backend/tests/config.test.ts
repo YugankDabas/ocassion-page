@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyDatabaseUrl } from '../src/config/database';
+import { applyDatabaseUrl, describeDatabaseTarget, placeholderDatabaseSettings } from '../src/config/database';
 import { configurationProblems, loadEnv } from '../src/config/env';
 import { applySecret, loadSecretsIntoEnv, parseSecret } from '../src/config/secrets';
 
@@ -49,6 +49,21 @@ describe('database settings', () => {
     const env: NodeJS.ProcessEnv = { DATABASE_URL: 'postgresql://postgres:x@localhost:5432/occasion_admin', DB_HOST: 'ignored' };
     applyDatabaseUrl(env);
     expect(env.DATABASE_URL).toBe('postgresql://postgres:x@localhost:5432/occasion_admin');
+  });
+});
+
+describe('database settings copied from a template', () => {
+  it('names the settings that still hold a placeholder', () => {
+    expect(placeholderDatabaseSettings({ DB_HOST: 'db.internal', DB_NAME: 'occasion-admin', db_user: '<database-user>', DB_PASSWORD: '<database-password>' })).toEqual(['DB_USER', 'DB_PASSWORD']);
+    expect(placeholderDatabaseSettings({ DB_HOST: 'db.internal', DB_NAME: 'occasion-admin', DB_USER: 'occasion', DB_PASSWORD: 'a<b>c' })).toEqual([]);
+  });
+
+  it('describes the connection target without the password', () => {
+    const env: NodeJS.ProcessEnv = { DB_HOST: 'db.internal', DB_NAME: 'occasion-admin', DB_USER: 'occasion', DB_PASSWORD: 's3cr3t/pw' };
+    applyDatabaseUrl(env);
+    const target = describeDatabaseTarget(env.DATABASE_URL!);
+    expect(target).toEqual({ host: 'db.internal', port: '5432', database: 'occasion-admin', user: 'occasion', tls: true });
+    expect(JSON.stringify(target)).not.toContain('s3cr3t');
   });
 });
 

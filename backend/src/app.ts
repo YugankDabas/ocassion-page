@@ -17,7 +17,8 @@ import { LocalDiskStorage } from './storage/StorageProvider';
 export function databaseFailureReason(message: string): string {
   const code = /\bP\d{4}\b/.exec(message)?.[0];
   const category =
-    /P1001|P1002|P1008|Can't reach database server|timed out|ETIMEDOUT|ECONNREFUSED|ENOTFOUND|EAI_AGAIN/i.test(message) ? 'cannot_reach_database_server'
+    /template placeholder/i.test(message) ? `placeholder_value_in ${(message.split(': ').pop() ?? '').replace(/[^A-Z_, ]/g, '')}`
+    : /P1001|P1002|P1008|Can't reach database server|timed out|ETIMEDOUT|ECONNREFUSED|ENOTFOUND|EAI_AGAIN/i.test(message) ? 'cannot_reach_database_server'
     : /P1000|authentication failed|password authentication/i.test(message) ? 'wrong_user_or_password'
     : /P1011|\bTLS\b|\bSSL\b|certificate/i.test(message) ? 'tls_error'
     : /P1010|permission denied|must be owner|denied access/i.test(message) ? 'permission_denied'

@@ -82,6 +82,9 @@ describe('reason shown by the health check', () => {
     expect(databaseFailureReason('P1003: Database `occasion-admin` does not exist')).toBe('database_does_not_exist (P1003)');
     expect(databaseFailureReason('Error loading shared library libssl.so.3: No such file or directory')).toBe('migration_tool_cannot_run');
     expect(databaseFailureReason('something unexpected with password=hunter2')).toBe('other');
+    expect(databaseFailureReason('Database migration failed: Error: ERROR: permission denied to create database')).toBe('permission_denied');
+    expect(databaseFailureReason('Error: P3009 migrate found failed migrations in the target database')).toBe('migration_failed (P3009)');
+    expect(databaseFailureReason('Database settings still contain a template placeholder instead of a real value: DB_USER, DB_PASSWORD')).toBe('placeholder_value_in DB_USER, DB_PASSWORD');
   });
 });
 
