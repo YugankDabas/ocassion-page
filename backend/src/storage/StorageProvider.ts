@@ -1,6 +1,7 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { Readable } from 'node:stream';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { ServiceUnavailableError } from '../lib/errors';
 
 /** Where uploaded files live: S3 when S3_BUCKET is set, local disk otherwise. Callers do not know which. */
@@ -52,8 +53,12 @@ export class LocalDiskStorage implements IStorageProvider {
 }
 
 /**
- * An S3 bucket. Only its name is configured: the region is the service's AWS region and files are
- * served from the bucket's own https address, so the bucket must allow public reads of its objects.
+ * An S3 bucket, used only under its own folder (`prefix`): nothing outside that folder is ever
+ * written, read or deleted, so the bucket can be shared with other applications.
+ *
+ * Files are served from the bucket's own https address (the folder must then be publicly readable),
+ * or from `publicBaseUrl` when the bucket may not be read publicly: this API's /media route
+ * (see open()) or a CloudFront distribution in front of the bucket.
  * Uses the default AWS credential chain (the ECS task role); no access keys are stored.
  */
 export class S3Storage implements IStorageProvider {
@@ -62,9 +67,31 @@ export class S3Storage implements IStorageProvider {
   /** Set once an uploaded file has been fetched back over its public address. */
   private publicReadConfirmed = false;
 
-  constructor(private readonly opts: { bucket: string; region: string; prefix: string }) {
+  constructor(private readonly opts: { bucket: string; region: string; prefix: string; publicBaseUrl?: string }) {
     this.client = new S3Client({ region: opts.region });
-    this.publicBaseUrl = `https://${opts.bucket}.s3.${opts.region}.amazonaws.com`;
+    this.publicBaseUrl = (opts.publicBaseUrl || `https://${opts.bucket}.s3.${opts.region}.amazonaws.com`).replace(/\/+$/, '');
+  }
+
+  /**
+   * Reads one image of the folder, for this API's /media route. `objectKey` is the path after the
+   * base address, e.g. "occasion-pages/media/2026/10/<id>.webp". Anything outside the folder, or a
+   * file that is not an image, is "not found". Null when there is no such file.
+   */
+  async open(objectKey: string): Promise<{ body: Readable; contentType: string; contentLength?: number; etag?: string } | null> {
+    const folder = `${this.folder()}/`;
+    if (!objectKey.startsWith(folder) || !KEY_PATTERN.test(objectKey.slice(folder.length)) || objectKey.includes('..')) return null;
+    try {
+      const file = await this.client.send(new GetObjectCommand({ Bucket: this.opts.bucket, Key: objectKey }));
+      if (!(file.Body instanceof Readable)) return null;
+      if (!file.ContentType?.startsWith('image/')) {
+        file.Body.destroy();
+        return null;
+      }
+      return { body: file.Body, contentType: file.ContentType, contentLength: file.ContentLength, etag: file.ETag };
+    } catch (err) {
+      if ((err as { name?: string }).name === 'NoSuchKey') return null;
+      throw err;
+    }
   }
 
   async put(key: string, body: Buffer, contentType: string): Promise<{ url: string }> {
@@ -104,7 +131,9 @@ export class S3Storage implements IStorageProvider {
     }
     await this.delete(key).catch(() => undefined);
     throw new ServiceUnavailableError(
-      `The image was stored in bucket "${this.opts.bucket}" but cannot be read publicly (S3 answered ${status}). The bucket must be in ${this.opts.region} and allow public reads of its objects.`,
+      this.opts.publicBaseUrl
+        ? `The image was stored in bucket "${this.opts.bucket}" but cannot be read at ${url} (answered ${status}). Check MEDIA_BASE_URL; when it is this API's /media, the backend's task role needs s3:GetObject on ${this.opts.bucket}/${this.folder()}/*.`
+        : `The image was stored in bucket "${this.opts.bucket}" but cannot be read publicly (S3 answered ${status}). The bucket must be in ${this.opts.region} and allow public reads of its objects, or set MEDIA_BASE_URL.`,
     );
   }
 
@@ -113,8 +142,12 @@ export class S3Storage implements IStorageProvider {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.opts.bucket, Key: this.objectKey(key) }));
   }
 
+  private folder(): string {
+    return this.opts.prefix.replace(/^\/+|\/+$/g, '');
+  }
+
   private objectKey(key: string): string {
-    return this.opts.prefix ? `${this.opts.prefix.replace(/\/$/, '')}/${key}` : key;
+    return `${this.folder()}/${key}`;
   }
 }
 

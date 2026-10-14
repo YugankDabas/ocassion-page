@@ -118,7 +118,8 @@ variables on the ECS task definition and reads everything else from one Secrets 
 | `DB_PASSWORD` | Database password | Any characters are allowed. |
 | `JWT_SECRET` | 48 random bytes (`openssl rand -base64 48`), different per environment | Signs admin sessions. |
 | `PAGE_PUBLIC_BASE_URL` | `https://www.gyftr.com/occasion` | Page URLs and canonical links are built from it. |
-| `S3_BUCKET` | Name of the media bucket | Uploaded images. The region is `AWS_REGION`; images are served from `https://<bucket>.s3.<region>.amazonaws.com`. |
+| `S3_BUCKET` | Name of the media bucket | Uploaded images, in the bucket's folder `occasion-pages/` only (the bucket can be shared). The region is `AWS_REGION`; images are served from `https://<bucket>.s3.<region>.amazonaws.com`. |
+| `MEDIA_BASE_URL` | `https://api-occasion-admin.gyftr.net/media` (staging) | Optional. For a bucket that may not be read publicly: images are served by this API's `/media` route (task role needs `s3:GetObject` on `<bucket>/occasion-pages/*`), or by a CloudFront address put here. |
 | `TECH_READER_PASSWORD` | `openssl rand -base64 24` | Optional. Password of the read-only database login for the gyftr.com tech team (`tech_reader`), created at start-up. |
 
 Keys the application does not know are ignored, so the secret can hold other things too.

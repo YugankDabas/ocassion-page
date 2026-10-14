@@ -54,7 +54,14 @@ const settings = z.object({
    * LOCAL_UPLOAD_DIR and served by this API under PUBLIC_UPLOADS_BASE_URL.
    */
   S3_BUCKET: z.string().trim().optional(),
-  S3_PREFIX: z.string().default('occasion-pages'),
+  /** The folder of the bucket this panel uses. Nothing outside it is written, read or deleted. */
+  S3_PREFIX: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/, 'one folder name: lowercase letters, digits, - and _').default('occasion-pages'),
+  /**
+   * Optional. Where uploaded images are served from when the bucket may not be read publicly: this
+   * API's /media route (e.g. https://api-occasion-admin.gyftr.net/media) or a CloudFront address in
+   * front of the bucket. Empty: the bucket's own https address.
+   */
+  MEDIA_BASE_URL: z.string().trim().url().optional(),
   AWS_REGION: z.string().regex(/^[a-z]{2}(-[a-z]+)+-\d$/, 'must be an AWS region such as ap-south-1').default('ap-south-1'),
   LOCAL_UPLOAD_DIR: z.string().default('./uploads'),
   PUBLIC_UPLOADS_BASE_URL: z.string().url().optional(),
@@ -86,6 +93,9 @@ export function configurationProblems(env: Env): string[] {
     if (env.isProduction) problems.push('S3_BUCKET is not set: image upload is disabled until it is');
   } else if (!isBucketName(env.S3_BUCKET)) {
     problems.push(`S3_BUCKET "${env.S3_BUCKET}" is not usable (lowercase letters, digits and hyphens only; no dots, no s3:// prefix): image upload is disabled`);
+  }
+  if (env.MEDIA_BASE_URL && env.isProduction && !env.MEDIA_BASE_URL.startsWith('https://')) {
+    problems.push(`MEDIA_BASE_URL "${env.MEDIA_BASE_URL}" must be an https address, otherwise browsers block the images on gyftr.com`);
   }
   return problems;
 }

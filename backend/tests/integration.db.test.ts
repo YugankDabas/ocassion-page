@@ -22,21 +22,21 @@ const url = process.env.TEST_DATABASE_URL;
 /** A login of its own, so a real tech_reader on the same server is never touched. */
 const LOGIN = 'tech_reader_test';
 
-/** Query 1 of docs/INTEGRATION_DATABASE.md, word for word: every occasion, and whether it has a published page. */
+/** Query 1 of docs/INTEGRATION_DATABASE.md, word for word: the occasions that have a published page. */
 const PUBLISHED_OCCASIONS = `
-SELECT o."slug"                          AS occasion_slug,
-       o."name"                          AS occasion_name,
-       COALESCE(pp."isPublished", false) AS is_published,
-       pp."slug"                         AS page_slug,
-       pp."desktopBanner"                AS desktop_banner,
-       pp."mobileBanner"                 AS mobile_banner,
-       pp."version"                      AS version,
-       pp."publishedAt"                  AS published_at,
-       pp."renderedAt"                   AS updated_at
-FROM "Occasion" o
-LEFT JOIN ("Page" p JOIN "PagePublication" pp ON pp."pageId" = p."id")
-       ON p."occasionId" = o."id"
-ORDER BY is_published DESC, o."name", pp."slug"`;
+SELECT o."slug"           AS occasion_slug,
+       o."name"           AS occasion_name,
+       pp."isPublished"   AS is_published,
+       pp."slug"          AS page_slug,
+       pp."desktopBanner" AS desktop_banner,
+       pp."mobileBanner"  AS mobile_banner,
+       pp."version"       AS version,
+       pp."publishedAt"   AS published_at,
+       pp."renderedAt"    AS updated_at
+FROM "PagePublication" pp
+JOIN "Page"     p ON p."id" = pp."pageId"
+JOIN "Occasion" o ON o."id" = p."occasionId"
+ORDER BY o."name", pp."slug"`;
 
 /** Query 2 of docs/INTEGRATION_DATABASE.md, word for word: the HTML of one page, by page_slug from query 1. */
 const PAGE_HTML = `
@@ -166,11 +166,8 @@ describe.skipIf(!url)('database: schema at start-up and the tech team\'s read-on
     await expect(ensureTechReader(url!, undefined, me!.user)).rejects.toThrow(/refusing to manage/);
   });
 
-  it('lists every occasion as not published while no page is published', async () => {
-    expect(await asTech(PUBLISHED_OCCASIONS)).toMatchObject([
-      { occasion_slug: 'diwali-gift-cards', is_published: false, page_slug: null, desktop_banner: null },
-      { occasion_slug: 'holi-gift-ideas', is_published: false, page_slug: null },
-    ]);
+  it('lists nothing while no page is published', async () => {
+    expect(await asTech(PUBLISHED_OCCASIONS)).toEqual([]);
     expect(await asTech(PAGE_HTML, 'diwali')).toEqual([]);
   });
 
@@ -181,10 +178,8 @@ describe.skipIf(!url)('database: schema at start-up and the tech team\'s read-on
 
     const list = await asTech(PUBLISHED_OCCASIONS);
     expect(Object.keys(list[0]!)).toEqual(['occasion_slug', 'occasion_name', 'is_published', 'page_slug', 'desktop_banner', 'mobile_banner', 'version', 'published_at', 'updated_at']);
-    expect(list).toMatchObject([
-      { occasion_slug: 'diwali-gift-cards', occasion_name: 'Diwali Gift Cards', is_published: true, page_slug: 'diwali', ...{ desktop_banner: banners.desktopBanner, mobile_banner: banners.mobileBanner }, version: 1 },
-      { occasion_slug: 'holi-gift-ideas', is_published: false, page_slug: null }, // Holi has no published page
-    ]);
+    expect(list).toHaveLength(1); // Holi has no published page, so it is not listed
+    expect(list[0]).toMatchObject({ occasion_slug: 'diwali-gift-cards', occasion_name: 'Diwali Gift Cards', is_published: true, page_slug: 'diwali', desktop_banner: banners.desktopBanner, mobile_banner: banners.mobileBanner, version: 1 });
 
     const rows = await asTech(PAGE_HTML, list[0]!.page_slug);
     expect(rows).toHaveLength(1);
@@ -253,7 +248,7 @@ describe.skipIf(!url)('database: schema at start-up and the tech team\'s read-on
     expect(tables).toEqual([{ table: 'Occasion', right: 'SELECT' }, { table: 'PagePublication', right: 'SELECT' }]);
     const columns = await db.$queryRawUnsafe<Row[]>(`SELECT column_name::text AS "column", privilege_type::text AS "right" FROM information_schema.column_privileges WHERE grantee = '${LOGIN}' AND table_name = 'Page' ORDER BY 1, 2`);
     expect(columns).toEqual([{ column: 'id', right: 'SELECT' }, { column: 'occasionId', right: 'SELECT' }]);
-    expect((await asTech(PUBLISHED_OCCASIONS))[0]).toMatchObject({ is_published: true }); // and the two queries still work
+    expect(await asTech(PUBLISHED_OCCASIONS)).toHaveLength(1); // and the two queries still work
   });
 
   it('a stale publish changes nothing', async () => {
@@ -286,7 +281,7 @@ describe.skipIf(!url)('database: schema at start-up and the tech team\'s read-on
   it('unpublishing removes the page from both queries in the same step, and a late refresh cannot bring it back', async () => {
     const page = await new PrismaPageRepository(db).setStatus(pageId, 'DRAFT', { clearPublished: true });
     expect(page).toMatchObject({ status: 'DRAFT', publishedSlug: null });
-    expect((await asTech(PUBLISHED_OCCASIONS)).map((r) => r.is_published)).toEqual([false, false]);
+    expect(await asTech(PUBLISHED_OCCASIONS)).toEqual([]);
     expect(await asTech(PAGE_HTML, 'diwali')).toEqual([]);
     expect(await new PrismaPublicationRepository(db).refresh(pageId, 1, async () => ({ html: 'late', seo, ...banners }))).toBe('gone');
     expect(await asTech(PAGE_HTML, 'diwali')).toEqual([]);

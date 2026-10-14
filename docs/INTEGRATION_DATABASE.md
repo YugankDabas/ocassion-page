@@ -30,37 +30,37 @@ Limits on the login (so a fault on one side cannot hurt the other):
 
 Table and column names are case-sensitive: keep the double quotes exactly as written below.
 
-## Query 1 — every occasion, and whether it has a published page
+## Query 1 — occasions that have a published page
 
 ```sql
-SELECT o."slug"                          AS occasion_slug,
-       o."name"                          AS occasion_name,
-       COALESCE(pp."isPublished", false) AS is_published,
-       pp."slug"                         AS page_slug,
-       pp."desktopBanner"                AS desktop_banner,
-       pp."mobileBanner"                 AS mobile_banner,
-       pp."version"                      AS version,
-       pp."publishedAt"                  AS published_at,
-       pp."renderedAt"                   AS updated_at
-FROM "Occasion" o
-LEFT JOIN ("Page" p JOIN "PagePublication" pp ON pp."pageId" = p."id")
-       ON p."occasionId" = o."id"
-ORDER BY is_published DESC, o."name", pp."slug";
+SELECT o."slug"           AS occasion_slug,
+       o."name"           AS occasion_name,
+       pp."isPublished"   AS is_published,
+       pp."slug"          AS page_slug,
+       pp."desktopBanner" AS desktop_banner,
+       pp."mobileBanner"  AS mobile_banner,
+       pp."version"       AS version,
+       pp."publishedAt"   AS published_at,
+       pp."renderedAt"    AS updated_at
+FROM "PagePublication" pp
+JOIN "Page"     p ON p."id" = pp."pageId"
+JOIN "Occasion" o ON o."id" = p."occasionId"
+ORDER BY o."name", pp."slug";
 ```
 
 | Column | Meaning |
 | --- | --- |
 | `occasion_slug`, `occasion_name` | The occasion, e.g. `diwali-gift-cards`, `Diwali Gift Cards`. |
-| `is_published` | `true` when the occasion has a page published from the panel, `false` when it has none. |
-| `page_slug` | The key for query 2. It is the last part of the page URL (`/occasion/<page_slug>`) and is unique. Empty (NULL) when `is_published` is `false`; so are the columns below. |
+| `is_published` | Always `true`: only occasions with a published page are listed. |
+| `page_slug` | The key for query 2. It is the last part of the page URL (`/occasion/<page_slug>`) and is unique. |
 | `desktop_banner`, `mobile_banner` | Image URLs of the page's top banner (desktop / web and mobile). NULL when the page has no banner image. |
 | `version` | Goes up each time an editor publishes. |
 | `published_at` | When the current version was published (UTC). |
 | `updated_at` | Last time the HTML changed: on publish, or when a brand discount shown on the page changed (UTC). |
 
-Every occasion appears, published ones first. To get only the published ones, add
-`WHERE pp."slug" IS NOT NULL` before `ORDER BY`. An occasion can have more than one published page; each is
-one row, which is why the key for query 2 is `page_slug` and not the occasion.
+Only occasions with a published page appear: an occasion that is not listed has no published page. An
+occasion can have more than one published page; each is one row, which is why the key for query 2 is
+`page_slug` and not the occasion.
 
 ## Query 2 — the HTML of one page
 

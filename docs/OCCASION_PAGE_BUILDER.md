@@ -58,22 +58,22 @@ connections, 15 seconds per statement and 60 seconds for an idle open transactio
 
 Table and column names are case-sensitive; keep the double quotes.
 
-**Query 1 — every occasion, and whether it has a published page**
+**Query 1 — occasions that have a published page**
 
 ```sql
-SELECT o."slug"                          AS occasion_slug,
-       o."name"                          AS occasion_name,
-       COALESCE(pp."isPublished", false) AS is_published,
-       pp."slug"                         AS page_slug,
-       pp."desktopBanner"                AS desktop_banner,
-       pp."mobileBanner"                 AS mobile_banner,
-       pp."version"                      AS version,
-       pp."publishedAt"                  AS published_at,
-       pp."renderedAt"                   AS updated_at
-FROM "Occasion" o
-LEFT JOIN ("Page" p JOIN "PagePublication" pp ON pp."pageId" = p."id")
-       ON p."occasionId" = o."id"
-ORDER BY is_published DESC, o."name", pp."slug";
+SELECT o."slug"           AS occasion_slug,
+       o."name"           AS occasion_name,
+       pp."isPublished"   AS is_published,
+       pp."slug"          AS page_slug,
+       pp."desktopBanner" AS desktop_banner,
+       pp."mobileBanner"  AS mobile_banner,
+       pp."version"       AS version,
+       pp."publishedAt"   AS published_at,
+       pp."renderedAt"    AS updated_at
+FROM "PagePublication" pp
+JOIN "Page"     p ON p."id" = pp."pageId"
+JOIN "Occasion" o ON o."id" = p."occasionId"
+ORDER BY o."name", pp."slug";
 ```
 
 **Query 2 — the HTML of one page** (`$1` is a `page_slug` from query 1)
@@ -326,6 +326,7 @@ Manager secret; the container is told only the secret's name.
   "JWT_SECRET": "<output of: openssl rand -base64 48>",
   "PAGE_PUBLIC_BASE_URL": "https://www.gyftr.com/occasion",
   "S3_BUCKET": "<bucket-name>",
+  "MEDIA_BASE_URL": "https://api-occasion-admin.gyftr.net/media",
   "TECH_READER_PASSWORD": "<output of: openssl rand -base64 24>"
 }
 ```
@@ -341,6 +342,12 @@ Manager secret; the container is told only the secret's name.
 - `JWT_SECRET` must be at least 32 characters and different in staging and production.
 - `S3_BUCKET` is the bucket name only: no `s3://`, no dots. The region is `AWS_REGION`. Images are served
   from `https://<bucket>.s3.<region>.amazonaws.com`, so the bucket must allow public reads of its objects.
+  Only the folder `occasion-pages/` is used (written, read, deleted), so the bucket can be shared.
+- `MEDIA_BASE_URL` is optional, for a bucket that may not be read publicly (staging: `drafts-bucket`). With this
+  API's address (`https://api-occasion-admin.gyftr.net/media`) the images are read from the bucket by the backend
+  and served by its `/media` route, which serves images of that folder only; the task role needs `s3:GetObject`
+  on `<bucket>/occasion-pages/*`. For production a CloudFront address in front of the bucket can be put here
+  instead. Images keep the address they were uploaded with.
 - `TECH_READER_PASSWORD` is optional: it is the password of the tech team's read-only database login (section 4).
   Leave it out and no such login is created.
 - No AWS access keys are stored: S3 and Secrets Manager are reached with the ECS task role.

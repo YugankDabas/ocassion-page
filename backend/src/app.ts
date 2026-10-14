@@ -9,7 +9,7 @@ import type { Container } from './container';
 import { errorHandler, notFoundHandler } from './http/middleware';
 import { adminRouter } from './http/routes';
 import { healthPayload, readyReport, type StartupReport } from './startup';
-import { LocalDiskStorage } from './storage/StorageProvider';
+import { LocalDiskStorage, S3Storage } from './storage/StorageProvider';
 
 export function createApp(c: Container, startup: StartupReport = readyReport()): Express {
   const { env, logger } = c;
@@ -114,11 +114,45 @@ export function createApp(c: Container, startup: StartupReport = readyReport()):
     );
   }
 
+  // Uploaded images read from the bucket by this API, for a bucket that may not be read publicly
+  // (MEDIA_BASE_URL = this API's /media). Public, like the images themselves; only the panel's own
+  // folder can be read through it, and only images.
+  if (c.storage instanceof S3Storage) {
+    const storage = c.storage;
+    app.use('/media', async (req, res, next) => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+      try {
+        const file = await storage.open(decodeURIComponent(req.path.slice(1)));
+        if (!file) return res.status(404).set('Cache-Control', 'no-store').end();
+        res.set({
+          'Content-Type': file.contentType,
+          // File names are unique (uuid), so a file never changes.
+          'Cache-Control': 'public, max-age=31536000, immutable',
+          'X-Content-Type-Options': 'nosniff',
+          ...(file.contentLength !== undefined ? { 'Content-Length': String(file.contentLength) } : {}),
+          ...(file.etag ? { ETag: file.etag } : {}),
+        });
+        if (req.method === 'HEAD') {
+          file.body.destroy();
+          return res.end();
+        }
+        file.body.on('error', (err) => {
+          req.log.error({ err }, 'Reading an image from the bucket failed');
+          res.destroy(err);
+        });
+        file.body.pipe(res);
+      } catch (err) {
+        req.log.error({ err }, 'Could not read an image from the bucket');
+        res.status(502).set('Cache-Control', 'no-store').end();
+      }
+    });
+  }
+
   // The built admin panel (same origin as the API).
   if (env.SERVE_FRONTEND_DIR) {
     const dir = path.resolve(env.SERVE_FRONTEND_DIR);
     app.use(express.static(dir, { index: false, maxAge: '1h' }));
-    app.get(/^\/(?!api\/|uploads\/).*/, (_req, res) => {
+    app.get(/^\/(?!api\/|uploads\/|media\/).*/, (_req, res) => {
       res.set('Cache-Control', 'no-cache');
       res.sendFile(path.join(dir, 'index.html'));
     });

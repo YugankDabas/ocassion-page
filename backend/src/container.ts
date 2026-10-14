@@ -59,7 +59,7 @@ export function createContainer(env: Env, logger: Logger, prisma = createPrismaC
   // Uploaded images: the S3 bucket when one is configured, local disk otherwise (development).
   // A deployed container's disk is lost on every deploy, so without a usable bucket uploads are refused, not kept on disk.
   const storage: IStorageProvider = isBucketName(env.S3_BUCKET)
-    ? new S3Storage({ bucket: env.S3_BUCKET, region: env.AWS_REGION, prefix: env.S3_PREFIX })
+    ? new S3Storage({ bucket: env.S3_BUCKET, region: env.AWS_REGION, prefix: env.S3_PREFIX, publicBaseUrl: env.MEDIA_BASE_URL })
     : env.isProduction || env.S3_BUCKET || !env.PUBLIC_UPLOADS_BASE_URL
       ? new UnavailableStorage()
       : new LocalDiskStorage(env.LOCAL_UPLOAD_DIR, env.PUBLIC_UPLOADS_BASE_URL);
