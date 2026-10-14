@@ -289,6 +289,17 @@ export class BrandController {
   };
 }
 
+/**
+ * This API's public address, as the browser reached it (e.g. https://api-occasion-admin.gyftr.net).
+ * Always https except on a developer machine: deployed, TLS ends at the load balancer.
+ */
+function apiOrigin(req: Request): string | undefined {
+  const host = req.get('host') ?? '';
+  if (!/^[a-z0-9.-]+(:\d+)?$/i.test(host)) return undefined;
+  const local = /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host);
+  return `${local ? req.protocol : 'https'}://${host.toLowerCase()}`;
+}
+
 export class MediaController {
   constructor(private readonly media: MediaService) {}
 
@@ -299,7 +310,7 @@ export class MediaController {
   upload = async (req: Request, res: Response) => {
     if (!req.file) throw new BadRequestError('Attach an image in the "file" field');
     const { alt } = parse(z.object({ alt: z.string().trim().max(200).default('') }), req.body ?? {});
-    const media = await this.media.upload(actorOf(req), { buffer: req.file.buffer, originalName: req.file.originalname }, alt);
+    const media = await this.media.upload(actorOf(req), { buffer: req.file.buffer, originalName: req.file.originalname }, alt, apiOrigin(req));
     res.status(201).json({ media });
   };
 

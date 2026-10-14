@@ -326,7 +326,6 @@ Manager secret; the container is told only the secret's name.
   "JWT_SECRET": "<output of: openssl rand -base64 48>",
   "PAGE_PUBLIC_BASE_URL": "https://www.gyftr.com/occasion",
   "S3_BUCKET": "<bucket-name>",
-  "MEDIA_BASE_URL": "https://api-occasion-admin.gyftr.net/media",
   "TECH_READER_PASSWORD": "<output of: openssl rand -base64 24>"
 }
 ```
@@ -340,14 +339,13 @@ Manager secret; the container is told only the secret's name.
   (TLS) for a remote database, at most 10 connections per container. The RDS certificate chain is not verified
   (`rejectUnauthorized: false`), the same as in the other GyFTR panels.
 - `JWT_SECRET` must be at least 32 characters and different in staging and production.
-- `S3_BUCKET` is the bucket name only: no `s3://`, no dots. The region is `AWS_REGION`. Images are served
-  from `https://<bucket>.s3.<region>.amazonaws.com`, so the bucket must allow public reads of its objects.
-  Only the folder `occasion-pages/` is used (written, read, deleted), so the bucket can be shared.
-- `MEDIA_BASE_URL` is optional, for a bucket that may not be read publicly (staging: `drafts-bucket`). With this
-  API's address (`https://api-occasion-admin.gyftr.net/media`) the images are read from the bucket by the backend
-  and served by its `/media` route, which serves images of that folder only; the task role needs `s3:GetObject`
-  on `<bucket>/occasion-pages/*`. For production a CloudFront address in front of the bucket can be put here
-  instead. Images keep the address they were uploaded with.
+- `S3_BUCKET` is the bucket name only: no `s3://`, no dots. The region is `AWS_REGION`. Only the folder
+  `occasion-pages/` is used (written, read, deleted), so the bucket can be shared, and it stays private: this
+  API serves the images at `https://api-occasion-admin.gyftr.net/media/occasion-pages/...`, reading them from
+  the bucket. The task role needs `s3:PutObject`, `s3:GetObject` and `s3:DeleteObject` on `<bucket>/occasion-pages/*`.
+  The `/media` route serves images of that folder only.
+- `MEDIA_BASE_URL` is optional and not needed: set it only to serve the images from another address, such as a
+  CloudFront distribution in front of the bucket (production). Images keep the address they were uploaded with.
 - `TECH_READER_PASSWORD` is optional: it is the password of the tech team's read-only database login (section 4).
   Leave it out and no such login is created.
 - No AWS access keys are stored: S3 and Secrets Manager are reached with the ECS task role.

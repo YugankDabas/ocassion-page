@@ -63,7 +63,24 @@ afterEach(() => {
 });
 
 describe('images in a bucket that is not public', () => {
-  it('stores uploads in the panel\'s own folder, with an address on this API', async () => {
+  it("without any setting, an upload gets this API's own address: the bucket need not be public", async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 200 })));
+    const plain = storageWithFakeBucket(new S3Storage({ bucket: BUCKET, region: 'ap-south-1', prefix: 'occasion-pages' }));
+    const { url } = await plain.put('media/2026/10/new.webp', Buffer.from('x'), 'image/webp', 'https://api-occasion-admin.gyftr.net');
+    expect(url).toBe('https://api-occasion-admin.gyftr.net/media/occasion-pages/media/2026/10/new.webp');
+    expect(calls).toEqual([{ command: 'PutObjectCommand', key: 'occasion-pages/media/2026/10/new.webp' }]);
+  });
+
+  it('an image that cannot be read back is removed again, and the error says what to fix', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 502 })));
+    const plain = storageWithFakeBucket(new S3Storage({ bucket: BUCKET, region: 'ap-south-1', prefix: 'occasion-pages' }));
+    await expect(plain.put('media/2026/10/new.webp', Buffer.from('x'), 'image/webp', 'https://api-occasion-admin.gyftr.net')).rejects.toThrow(
+      's3:GetObject on drafts-bucket/occasion-pages/*',
+    );
+    expect(calls.map((c) => c.command)).toEqual(['PutObjectCommand', 'DeleteObjectCommand']);
+  });
+
+  it('with MEDIA_BASE_URL (e.g. CloudFront later), uploads get that address instead', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 200 })));
     const { url } = await storage.put('media/2026/10/new.webp', Buffer.from('x'), 'image/webp');
     expect(url).toBe(`${MEDIA}/occasion-pages/media/2026/10/new.webp`);

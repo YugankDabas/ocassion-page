@@ -78,11 +78,12 @@ export class MediaService {
     return this.media.list(opts);
   }
 
-  async upload(actor: Actor, file: UploadedFile, alt = '') {
+  /** `apiOrigin`: this API's own address, from the request (images may be served by this API). */
+  async upload(actor: Actor, file: UploadedFile, alt = '', apiOrigin?: string) {
     const image = await this.images.process(file.buffer);
     const now = new Date();
     const key = `media/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${randomUUID()}.${image.extension}`;
-    const { url } = await this.storage.put(key, image.body, image.mimeType);
+    const { url } = await this.storage.put(key, image.body, image.mimeType, apiOrigin);
 
     try {
       const record = await this.media.create({
