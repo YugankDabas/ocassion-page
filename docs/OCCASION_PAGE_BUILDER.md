@@ -58,19 +58,22 @@ connections, 15 seconds per statement and 60 seconds for an idle open transactio
 
 Table and column names are case-sensitive; keep the double quotes.
 
-**Query 1 — occasions that have a published page**
+**Query 1 — every occasion, and whether it has a published page**
 
 ```sql
-SELECT o."slug"         AS occasion_slug,
-       o."name"         AS occasion_name,
-       pp."slug"        AS page_slug,
-       pp."version"     AS version,
-       pp."publishedAt" AS published_at,
-       pp."renderedAt"  AS updated_at
-FROM "PagePublication" pp
-JOIN "Page"     p ON p."id" = pp."pageId"
-JOIN "Occasion" o ON o."id" = p."occasionId"
-ORDER BY o."name", pp."slug";
+SELECT o."slug"                          AS occasion_slug,
+       o."name"                          AS occasion_name,
+       COALESCE(pp."isPublished", false) AS is_published,
+       pp."slug"                         AS page_slug,
+       pp."desktopBanner"                AS desktop_banner,
+       pp."mobileBanner"                 AS mobile_banner,
+       pp."version"                      AS version,
+       pp."publishedAt"                  AS published_at,
+       pp."renderedAt"                   AS updated_at
+FROM "Occasion" o
+LEFT JOIN ("Page" p JOIN "PagePublication" pp ON pp."pageId" = p."id")
+       ON p."occasionId" = o."id"
+ORDER BY is_published DESC, o."name", pp."slug";
 ```
 
 **Query 2 — the HTML of one page** (`$1` is a `page_slug` from query 1)
@@ -78,8 +81,11 @@ ORDER BY o."name", pp."slug";
 ```sql
 SELECT pp."slug"                          AS page_slug,
        pp."source"                        AS source,
+       pp."isPublished"                   AS is_published,
        pp."version"                       AS version,
        pp."html"                          AS html,
+       pp."desktopBanner"                 AS desktop_banner,
+       pp."mobileBanner"                  AS mobile_banner,
        pp."seo" ->> 'title'               AS meta_title,
        pp."seo" ->> 'description'         AS meta_description,
        pp."seo" ->> 'keywords'            AS meta_keywords,

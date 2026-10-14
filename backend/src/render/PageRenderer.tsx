@@ -4,7 +4,7 @@ import { loadRenderAssets, type RenderAssets } from './assets';
 import { OccasionPage } from './components/OccasionPage';
 import { prefixClasses, transformCss } from './css';
 import { exportRuntime } from './runtime';
-import { buildSeo, serializeJsonLd, type PageSeo } from './seo';
+import { buildBanner, buildSeo, serializeJsonLd, type PageBanner, type PageSeo } from './seo';
 
 /** Every class in embedded markup carries this prefix, so the host site's CSS (Bootstrap, …) can never match it. */
 const CLASS_PREFIX = 'occ-';
@@ -54,6 +54,7 @@ export interface RenderedFragment {
   /** Ready to insert: `<style>` + markup + `<script>`. No <html>, <head>, header or footer. */
   html: string;
   seo: PageSeo;
+  banner: PageBanner;
   /** Every image URL the markup references (for validation before publishing). */
   images: string[];
 }
@@ -88,6 +89,7 @@ export class PageRenderer implements IPageRenderer {
     return {
       html: `<style>${inlineSafe(css, 'style')}</style>\n${body}\n<script>${inlineSafe(this.embedJs, 'script')}</script>`,
       seo: buildSeo(data, pageUrl),
+      banner: buildBanner(data, pageUrl),
       images: imageUrls(body),
     };
   }

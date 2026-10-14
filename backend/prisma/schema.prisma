@@ -40,20 +40,20 @@ enum RedemptionMode {
 }
 
 model User {
-  id           String    @id @default(uuid()) @db.Uuid
-  email        String    @unique
-  name         String
-  passwordHash String
-  role         Role      @default(EDITOR)
-  isActive     Boolean   @default(true)
+  id                 String    @id @default(uuid()) @db.Uuid
+  email              String    @unique
+  name               String
+  passwordHash       String
+  role               Role      @default(EDITOR)
+  isActive           Boolean   @default(true)
   /// The password was set by someone else (the default first administrator, or an administrator
   /// inviting / resetting a user). Until the user changes it, the account can do nothing else.
-  mustChangePassword Boolean @default(false)
+  mustChangePassword Boolean   @default(false)
   /// Bumped on password change / deactivation to revoke every issued session token.
-  tokenVersion Int       @default(0)
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  tokenVersion       Int       @default(0)
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   pagesCreated   Page[]         @relation("PageCreatedBy")
   pagesUpdated   Page[]         @relation("PageUpdatedBy")
@@ -151,25 +151,30 @@ model PageRevision {
 
 /// What gyftr.com serves for a published page: the rendered, embeddable HTML (styles + markup +
 /// script, no header / footer) and its SEO metadata. One row per published page; a row exists
-/// only while the page is published. The gyftr.com backend never reads this table directly: it
-/// reads the view integration.published_pages.
+/// only while the page is published. The gyftr.com backend reads it directly with its read-only
+/// login (docs/INTEGRATION_DATABASE.md).
 model PagePublication {
   /// URL slug the page is published under.
-  slug        String   @id
+  slug          String   @id
   /// Which system produced the page. Always OCCASION_PAGE_BUILDER: it lets the gyftr.com backend
   /// label these rows when it merges them with pages from its own sources.
-  source      String   @default("OCCASION_PAGE_BUILDER")
-  pageId      String   @unique @db.Uuid
-  page        Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  source        String   @default("OCCASION_PAGE_BUILDER")
+  pageId        String   @unique @db.Uuid
+  page          Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
   /// Page.draftVersion that was published.
-  version     Int
+  version       Int
   /// Ready to insert: <style> + markup + <script>.
-  html        String
+  html          String
   /// Values for <head>: title, description, keywords, canonicalUrl, noIndex, ogImage, jsonLd.
-  seo         Json
-  publishedAt DateTime
+  seo           Json
+  /// Top banner of the page (first slide of the banner section): absolute image URLs, null when not set.
+  desktopBanner String?
+  mobileBanner  String?
+  /// Always true: a row exists only while the page is published. Given to gyftr.com as an explicit flag.
+  isPublished   Boolean  @default(true)
+  publishedAt   DateTime
   /// Last time the HTML was re-rendered (publish, or a brand / site-settings change).
-  renderedAt  DateTime @default(now())
+  renderedAt    DateTime @default(now())
 }
 
 model Brand {

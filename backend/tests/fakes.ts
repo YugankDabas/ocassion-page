@@ -76,7 +76,7 @@ export class InMemoryPageRepository implements IPageRepository {
     this.pages.set(id, next);
     this.addRevision(id, expectedVersion, revision);
     this.publications = this.publications.filter((r) => r.pageId !== id);
-    this.publications.push({ slug: data.publishedSlug, pageId: id, version: expectedVersion, html: rendered.html, seo: rendered.seo, publishedAt: next.publishedAt!, renderedAt: next.publishedAt! });
+    this.publications.push({ slug: data.publishedSlug, pageId: id, version: expectedVersion, html: rendered.html, seo: rendered.seo, desktopBanner: rendered.desktopBanner, mobileBanner: rendered.mobileBanner, isPublished: true, publishedAt: next.publishedAt!, renderedAt: next.publishedAt! });
     return next;
   }
   async setStatus(id: string, status: PageRecord['status'], opts: { clearPublished?: boolean } = {}) {
@@ -148,8 +148,8 @@ export class InMemoryPublicationRepository implements IPublicationRepository {
     // Like the real repository: the row is re-checked at write time, never created.
     const row = await this.findByPageId(pageId);
     if (!row || row.version !== version) return 'gone';
-    if (next.html === row.html && JSON.stringify(next.seo) === JSON.stringify(row.seo)) return 'unchanged';
-    Object.assign(row, { html: next.html, seo: next.seo, renderedAt: new Date() });
+    if (next.html === row.html && JSON.stringify(next.seo) === JSON.stringify(row.seo) && next.desktopBanner === row.desktopBanner && next.mobileBanner === row.mobileBanner) return 'unchanged';
+    Object.assign(row, { html: next.html, seo: next.seo, desktopBanner: next.desktopBanner, mobileBanner: next.mobileBanner, renderedAt: new Date() });
     return 'updated';
   }
   /** What the gyftr.com backend finds for a URL slug (a lookup on PagePublication by its primary key). */

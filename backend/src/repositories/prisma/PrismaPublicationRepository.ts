@@ -21,10 +21,11 @@ export class PrismaPublicationRepository implements IPublicationRepository {
 
         const next = await render();
         const seo = JSON.parse(JSON.stringify(next.seo)) as Prisma.InputJsonValue;
-        if (next.html === row.html && isDeepStrictEqual(seo, row.seo)) return 'unchanged';
+        const banners = { desktopBanner: next.desktopBanner, mobileBanner: next.mobileBanner };
+        if (next.html === row.html && isDeepStrictEqual(seo, row.seo) && banners.desktopBanner === row.desktopBanner && banners.mobileBanner === row.mobileBanner) return 'unchanged';
 
         // Conditional on the version: a publish that committed while we rendered wins.
-        const { count } = await tx.pagePublication.updateMany({ where: { pageId, version }, data: { html: next.html, seo, renderedAt: new Date() } });
+        const { count } = await tx.pagePublication.updateMany({ where: { pageId, version }, data: { html: next.html, seo, ...banners, renderedAt: new Date() } });
         return count ? 'updated' : 'gone';
       },
       { maxWait: 10_000, timeout: 30_000 },

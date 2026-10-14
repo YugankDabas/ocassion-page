@@ -135,6 +135,30 @@ describe('PageService', () => {
     expect(ctx.hosted('diwali-gift-cards')).toBeNull();
   });
 
+  it('stores the top banner images and the published flag for gyftr.com', async () => {
+    const page = await ctx.service.create(actor, { occasionId: occasion.id, title: 'Diwali', pageUrl: `${BASE}/diwali-gift-cards`, templateId: 'default' });
+    await ctx.publications.publish(actor, page.id, 1);
+    expect(ctx.hosted('diwali-gift-cards')).toMatchObject({ isPublished: true, desktopBanner: null, mobileBanner: null }); // no banner image yet
+
+    const content = structuredClone((await ctx.service.get(page.id)).draft);
+    const hero = content.sections.find((s) => s.type === 'hero');
+    if (hero?.type !== 'hero') throw new Error('template has no banner section');
+    hero.props.slides[0]!.desktopImage.url = 'https://media.example/occasion-pages/desktop.webp';
+    hero.props.slides[0]!.mobileImage.url = 'https://media.example/occasion-pages/mobile.webp';
+    await ctx.service.saveDraft(actor, page.id, { expectedVersion: 1, content });
+    await ctx.publications.publish(actor, page.id, 2);
+    expect(ctx.hosted('diwali-gift-cards')).toMatchObject({
+      isPublished: true,
+      desktopBanner: 'https://media.example/occasion-pages/desktop.webp',
+      mobileBanner: 'https://media.example/occasion-pages/mobile.webp',
+    });
+
+    hero.visible = false; // a hidden banner section is not on the page, so there is no banner
+    await ctx.service.saveDraft(actor, page.id, { expectedVersion: 2, content });
+    await ctx.publications.publish(actor, page.id, 3);
+    expect(ctx.hosted('diwali-gift-cards')).toMatchObject({ desktopBanner: null, mobileBanner: null });
+  });
+
   it('rejects a publish made from a stale version without changing what is live', async () => {
     const page = await ctx.service.create(actor, { occasionId: occasion.id, title: 'Diwali', pageUrl: `${BASE}/diwali-gift-cards`, templateId: 'default' });
     await ctx.publications.publish(actor, page.id, 1);

@@ -127,7 +127,7 @@ export class PrismaPageRepository implements IPageRepository {
       // What gyftr.com reads. A page has at most one row; a new slug replaces the old one.
       await tx.pagePublication.deleteMany({ where: { pageId: id } });
       await tx.pagePublication.create({
-        data: { slug: data.publishedSlug, pageId: id, version: expectedVersion, html: rendered.html, seo: json(rendered.seo), publishedAt, renderedAt: publishedAt },
+        data: { slug: data.publishedSlug, pageId: id, version: expectedVersion, html: rendered.html, seo: json(rendered.seo), desktopBanner: rendered.desktopBanner, mobileBanner: rendered.mobileBanner, publishedAt, renderedAt: publishedAt },
       });
       return tx.page.findUniqueOrThrow({ where: { id } });
     });

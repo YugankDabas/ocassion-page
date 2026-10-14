@@ -167,12 +167,17 @@ export interface PublicationRecord {
   /** Ready to insert: <style> + markup + <script>. */
   html: string;
   seo: PageSeo;
+  /** Top banner image URLs, null when the page has none. */
+  desktopBanner: string | null;
+  mobileBanner: string | null;
+  /** Always true: the row exists only while the page is published. */
+  isPublished: boolean;
   publishedAt: Date;
   renderedAt: Date;
 }
 
 /** What a render produces for storage. */
-export type RenderedPublication = Pick<PublicationRecord, 'html' | 'seo'>;
+export type RenderedPublication = Pick<PublicationRecord, 'html' | 'seo' | 'desktopBanner' | 'mobileBanner'>;
 
 /** updated = new HTML stored · unchanged = HTML identical, nothing written · gone = no longer published at that version. */
 export type RefreshOutcome = 'updated' | 'unchanged' | 'gone';

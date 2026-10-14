@@ -110,8 +110,24 @@ const SOURCE = `(function () {
     });
   }
 
+  // Links to a section of this page ("#brands") scroll to it directly instead of navigating, so they work
+  // wherever the HTML is inserted: a host page with a <base> element or a client-side router, or the editor
+  // preview. Only ids inside this page are used, so an element of the host page with the same id is never the target.
+  function sectionLinks(page) {
+    page.addEventListener('click', function (e) {
+      var link = e.target && e.target.closest ? e.target.closest('a[href^="#"]') : null;
+      if (!link || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      var id = link.getAttribute('href').slice(1), target = null, withId = page.querySelectorAll('[id]');
+      for (var i = 0; id && i < withId.length && !target; i++) if (withId[i].id === id) target = withId[i];
+      if (!target) return;
+      e.preventDefault();
+      target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+    });
+  }
+
   function init(root) {
     root = root || document;
+    all('.occasion', root).filter(fresh).forEach(sectionLinks);
     all('.hero-carousel', root).filter(fresh).forEach(slider);
     all('.brand-collection', root).filter(fresh).forEach(brandList);
     all('.brand-tabs', root).filter(fresh).forEach(tabs);

@@ -3,7 +3,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../lib/errors';
 import type { Logger } from '../lib/logger';
 import type { IImageInliner } from '../render/ImageInliner';
 import type { IPageRenderer, RenderedFragment } from '../render/PageRenderer';
-import type { IPageRepository, IPublicationRepository, PageRecord } from '../repositories/types';
+import type { IPageRepository, IPublicationRepository, PageRecord, RenderedPublication } from '../repositories/types';
 import type { Actor } from './AuditService';
 import type { PagePayloadService } from './PagePayloadService';
 import type { PageDetail, PageService } from './PageService';
@@ -24,6 +24,9 @@ export interface RefreshResult {
 }
 
 const MAX_REFRESH_RETRIES = 3;
+
+/** The parts of a render that are stored for gyftr.com. */
+const forStorage = ({ html, seo, banner }: RenderedFragment): RenderedPublication => ({ html, seo, desktopBanner: banner.desktop, mobileBanner: banner.mobile });
 
 /**
  * Everything that turns a page into HTML for the outside world:
@@ -60,7 +63,7 @@ export class PublicationService {
       throw new ConflictError('This page was changed by someone else since you opened it. Reload to get the latest version.', { reason: 'STALE_VERSION' });
     }
     const rendered = await this.render(page, page.draft, page.slug);
-    const published = await this.pageService.publish(actor, id, expectedVersion, note, { html: rendered.html, seo: rendered.seo });
+    const published = await this.pageService.publish(actor, id, expectedVersion, note, forStorage(rendered));
     // A brand may have changed between the render and the commit; one more pass settles it (no write when identical).
     await this.refreshPage(published).catch((err: unknown) => this.logger.error({ err, pageId: id }, 'Could not re-check the page after publishing'));
     return published;
@@ -162,10 +165,7 @@ export class PublicationService {
   private async refreshPage(page: PageRecord) {
     const { published, publishedSlug, publishedVersion } = page;
     if (!publishedSlug || publishedVersion === null || published === null) return 'gone' as const;
-    return this.publications.refresh(page.id, publishedVersion, async () => {
-      const { html, seo } = await this.render(page, published, publishedSlug);
-      return { html, seo };
-    });
+    return this.publications.refresh(page.id, publishedVersion, async () => forStorage(await this.render(page, published, publishedSlug)));
   }
 
   private async requirePage(id: string): Promise<PageRecord> {

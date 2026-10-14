@@ -14,6 +14,20 @@ export interface PageSeo {
   jsonLd: object[];
 }
 
+/** The page's top banner: the first slide of the (visible) banner section that has an image. Null when not set. */
+export interface PageBanner {
+  desktop: string | null;
+  mobile: string | null;
+}
+
+export function buildBanner(data: PageRenderData, pageUrl: string): PageBanner {
+  const siteOrigin = new URL(pageUrl).origin;
+  const hero = data.content.sections.find((s) => s.type === 'hero' && s.visible);
+  const slide = hero?.type === 'hero' ? hero.props.slides.find((s) => s.desktopImage.url || s.mobileImage.url) : undefined;
+  const url = (value: string | undefined) => (value ? absolute(value, siteOrigin) : null);
+  return { desktop: url(slide?.desktopImage.url), mobile: url(slide?.mobileImage.url) };
+}
+
 const absolute = (url: string, siteOrigin: string) => (url.startsWith('/') ? `${siteOrigin}${url}` : url);
 
 export function buildSeo(data: PageRenderData, pageUrl: string): PageSeo {
