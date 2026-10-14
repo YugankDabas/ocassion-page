@@ -106,13 +106,15 @@ describe('PageService', () => {
     expect(hosted).toMatchObject({ slug: 'diwali-gift-cards', pageId: page.id, version: 1 });
 
     // One string: <style> + markup + <script>. Body only — no document shell, no site header / footer.
-    const parts = /^<style>([\s\S]*?)<\/style>\n([\s\S]*)\n<script>([\s\S]*)<\/script>$/.exec(hosted.html);
+    const parts = /^<style>([\s\S]*?)<\/style>([\s\S]*)<script>([\s\S]*)<\/script>$/.exec(hosted.html);
     if (!parts) throw new Error('unexpected HTML shape');
     const [, css = '', body = ''] = parts;
     expect(hosted.html).not.toMatch(/<(?:html|head|body)[\s>]|site-header|site-footer/);
+    // Reads the same inside JSON: no double quotes, backslashes or line breaks to escape.
+    expect(JSON.stringify(hosted.html)).toBe(`"${hosted.html}"`);
     // Isolated from the host site: every class is prefixed and every rule is scoped to the root.
-    expect(body.startsWith('<div class="occ-occasion"')).toBe(true);
-    const classes = [...body.matchAll(/ class="([^"]*)"/g)].flatMap((m) => m[1]!.split(' '));
+    expect(body.startsWith("<div class='occ-occasion'")).toBe(true);
+    const classes = [...body.matchAll(/ class='([^']*)'/g)].flatMap((m) => m[1]!.split(' '));
     expect(classes.length).toBeGreaterThan(50);
     expect(classes.filter((c) => !c.startsWith('occ-'))).toEqual([]);
     expect(css).toContain('.occ-occasion .occ-brand-card');

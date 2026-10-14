@@ -3,6 +3,7 @@ import type { HeadingFont, PageRenderData } from '../contracts';
 import { loadRenderAssets, type RenderAssets } from './assets';
 import { OccasionPage } from './components/OccasionPage';
 import { prefixClasses, transformCss } from './css';
+import { jsonSafeCss, jsonSafeMarkup, jsonSafeScript } from './jsonSafe';
 import { exportRuntime } from './runtime';
 import { buildBanner, buildSeo, serializeJsonLd, type PageBanner, type PageSeo } from './seo';
 
@@ -51,7 +52,10 @@ const PREVIEW_BRIDGE = `(function () {
 })();`;
 
 export interface RenderedFragment {
-  /** Ready to insert: `<style>` + markup + `<script>`. No <html>, <head>, header or footer. */
+  /**
+   * Ready to insert: `<style>` + markup + `<script>`. No <html>, <head>, header or footer, and no
+   * double quotes, backslashes or line breaks, so it reads the same inside JSON.
+   */
   html: string;
   seo: PageSeo;
   banner: PageBanner;
@@ -77,7 +81,7 @@ export interface IPageRenderer {
  */
 export class PageRenderer implements IPageRenderer {
   private readonly embedCss = new Map<HeadingFont, string>();
-  private readonly embedJs = exportRuntime(CLASS_PREFIX);
+  private readonly embedJs = jsonSafeScript(exportRuntime(CLASS_PREFIX));
   private readonly documentJs = exportRuntime('');
 
   constructor(private readonly assets: RenderAssets = loadRenderAssets()) {}
@@ -87,7 +91,8 @@ export class PageRenderer implements IPageRenderer {
     const body = prefixClasses(markup, CLASS_PREFIX);
     const css = this.cssForEmbed(data.content.theme.headingFont);
     return {
-      html: `<style>${inlineSafe(css, 'style')}</style>\n${body}\n<script>${inlineSafe(this.embedJs, 'script')}</script>`,
+      // No double quotes, backslashes or line breaks: the HTML reads the same inside a JSON response (jsonSafe.ts).
+      html: `<style>${inlineSafe(css, 'style')}</style>${jsonSafeMarkup(body)}<script>${inlineSafe(this.embedJs, 'script')}</script>`,
       seo: buildSeo(data, pageUrl),
       banner: buildBanner(data, pageUrl),
       images: imageUrls(body),
@@ -138,7 +143,7 @@ export class PageRenderer implements IPageRenderer {
         rootClass: ROOT_CLASS,
         dropSelector: (selector) => CHROME_SELECTOR.test(selector),
       });
-      css = EMBED_RESET + scoped + EMBED_OVERRIDES;
+      css = jsonSafeCss(EMBED_RESET + scoped + EMBED_OVERRIDES);
       this.embedCss.set(heading, css);
     }
     return css;

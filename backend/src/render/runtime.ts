@@ -11,7 +11,7 @@
 const SOURCE = `(function () {
   'use strict';
   var P = '__CLASS_PREFIX__';
-  function sel(s) { return s.replace(/\\.([a-z])/g, '.' + P + '$1'); }
+  function sel(s) { return s.replace(/[.]([a-z])/g, '.' + P + '$1'); }
   function all(s, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel(s))); }
   function one(s, root) { return root.querySelector(sel(s)); }
   function fresh(el) { if (el.getAttribute('data-occ-ready')) return false; el.setAttribute('data-occ-ready', '1'); return true; }
@@ -81,7 +81,7 @@ const SOURCE = `(function () {
   }
 
   function tabs(root) {
-    var tabEls = all('[role="tab"]', root), panels = all('[role="tabpanel"]', root);
+    var tabEls = all('[role=tab]', root), panels = all('[role=tabpanel]', root);
     function select(i, focus) {
       tabEls.forEach(function (t, j) { t.setAttribute('aria-selected', j === i ? 'true' : 'false'); t.tabIndex = j === i ? 0 : -1; });
       panels.forEach(function (p, j) { p.hidden = j !== i; });
@@ -106,17 +106,18 @@ const SOURCE = `(function () {
       body.style.maxHeight = open ? '' : height + 'px';
       root.classList.toggle(P + 'is-open', open);
       btn.setAttribute('aria-expanded', String(open));
-      btn.textContent = (open ? btn.getAttribute('data-less') : btn.getAttribute('data-more')) + (open ? ' \\u25B2' : ' \\u25BC');
+      btn.textContent = (open ? btn.getAttribute('data-less') : btn.getAttribute('data-more')) + ' ' + String.fromCharCode(open ? 9650 : 9660);
     });
   }
 
-  // Links to a section of this page ("#brands") scroll to it directly instead of navigating, so they work
-  // wherever the HTML is inserted: a host page with a <base> element or a client-side router, or the editor
-  // preview. Only ids inside this page are used, so an element of the host page with the same id is never the target.
+  /* Links to a section of this page (#brands) scroll to it directly instead of navigating, so they work
+     wherever the HTML is inserted: a host page with a <base> element or a client-side router, or the editor
+     preview. Only ids inside this page are used, so an element of the host page with the same id is never the target. */
   function sectionLinks(page) {
     page.addEventListener('click', function (e) {
-      var link = e.target && e.target.closest ? e.target.closest('a[href^="#"]') : null;
-      if (!link || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      var link = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+      if (!link || link.getAttribute('href').charAt(0) !== '#') return;
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       var id = link.getAttribute('href').slice(1), target = null, withId = page.querySelectorAll('[id]');
       for (var i = 0; id && i < withId.length && !target; i++) if (withId[i].id === id) target = withId[i];
       if (!target) return;

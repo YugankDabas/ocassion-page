@@ -92,7 +92,7 @@ WHERE pp."slug" = $1;
 | `page_slug` | The page; primary key of `"PagePublication"`, so this is a single index lookup. |
 | `source` | Always `OCCASION_PAGE_BUILDER`: the page was built in the panel. |
 | `is_published` | Always `true`: the row exists only while the page is published. |
-| `html` | The page body, ready to insert: one `<style>`, the markup, one `<script>`. No `<html>`, `<head>`, header or footer. About 240 KB. |
+| `html` | The page body, ready to insert: one `<style>`, the markup, one `<script>`. No `<html>`, `<head>`, header or footer. About 240 KB. It is one line with no double quotes or backslashes (attributes use single quotes), so it looks exactly the same inside a JSON response: there is nothing to unescape. |
 | `desktop_banner`, `mobile_banner` | Image URLs of the top banner, NULL when there is none. The banner is already inside `html`, which shows the mobile image below 768 px and the desktop image from 768 px; use these columns elsewhere (a listing card, a share image), not to draw the banner again. |
 | `meta_title`, `meta_description`, `meta_keywords` | For the `<head>`. |
 | `canonical_url` | For `<link rel="canonical">`. |
