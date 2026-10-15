@@ -1,11 +1,11 @@
 import type { CSSProperties, ReactNode } from 'react';
-import type { PublicBrand, SectionLayout, SectionOf, SectionType, SiteSettings } from '../../../contracts';
+import type { IconSlot, PublicBrand, SectionLayout, SectionOf, SectionType, SiteSettings } from '../../../contracts';
 import { safeHtml } from '../../html';
 import { BrandCollection } from '../brand/BrandCollection';
 import { BrandTabs } from '../brand/BrandTabs';
 import { resolveBrands, type BrandCardData } from '../brand/types';
 import { Bits, HeroArt, Medallion, MotifGlyph, Ribbon, hasRibbon, type ResolvedMotif } from '../art/motifs';
-import { Icon, ItemIcon } from '../icons';
+import { ItemIcon, SlotIcon, hasIcon } from '../icons';
 import { Html, Picture, SectionHeading, SmartLink } from '../primitives';
 import { Collapsible } from './Collapsible';
 import { HeroCarousel } from './HeroCarousel';
@@ -119,7 +119,7 @@ export const HeroSection: SectionComponent<'hero'> = ({ section, ctx }) => {
         {s.subheading && <p className="hero-sub">{s.subheading}</p>}
         {s.ctaLabel && (
           <span className="hero-cta">
-            {s.ctaLabel} <Icon name="arrowRight" size={18} />
+            {s.ctaLabel} <SlotIcon slot={section.props.ctaIcon} size={18} />
           </span>
         )}
       </div>
@@ -214,7 +214,7 @@ export const IntroSection: SectionComponent<'intro'> = ({ section, ctx }) => {
   if (!p.eyebrow && !p.heading && !p.body) return null;
   return (
     <Shell section={section} tone={p.tone} className="section-intro">
-      {p.tone === 'primary' && (
+      {p.tone === 'primary' && p.showDecorations && (
         <>
           <Medallion motif={ctx.motif} className="intro-deco deco-left" />
           <Medallion motif={ctx.motif} className="intro-deco deco-right" />
@@ -223,7 +223,7 @@ export const IntroSection: SectionComponent<'intro'> = ({ section, ctx }) => {
       <div className={`intro align-${p.align}`}>
         {p.eyebrow && <p className="eyebrow">{p.eyebrow}</p>}
         {p.heading && (ctx.index === 0 ? <h1>{p.heading}</h1> : <h2>{p.heading}</h2>)}
-        {(p.eyebrow || p.heading) && <span className="ornament" aria-hidden />}
+        {p.showOrnament && (p.eyebrow || p.heading) && <span className="ornament" aria-hidden />}
         {p.body && <Html html={safeHtml(p.body)} />}
       </div>
     </Shell>
@@ -236,13 +236,15 @@ export const FeaturesSection: SectionComponent<'features'> = ({ section, ctx }) 
   if (!p.items.length) return null;
   return (
     <Shell section={section} tone={p.tone}>
-      <SectionHeading heading={p.heading} subheading={p.subheading} />
+      <SectionHeading heading={p.heading} subheading={p.subheading} ornament={p.showOrnament} />
       <ul className="features" style={{ '--cols': p.columns } as CSSProperties}>
         {p.items.map((f, i) => (
           <li key={f.id} className="feature">
-            <span className="feature-num" aria-hidden>
-              {String(i + 1).padStart(2, '0')}
-            </span>
+            {p.showNumbers && (
+              <span className="feature-num" aria-hidden>
+                {String(i + 1).padStart(2, '0')}
+              </span>
+            )}
             {(f.icon.url || f.emoji) && (
               <span className="feature-icon" aria-hidden>
                 {f.icon.url ? <Picture desktop={f.icon} /> : f.emoji}
@@ -264,7 +266,7 @@ export const BrandGridSection: SectionComponent<'brandGrid'> = ({ section, ctx }
   if (!brands.length) return null;
   return (
     <Shell section={section} className="section-brands">
-      <SectionHeading heading={p.heading} subheading={p.subheading} />
+      <SectionHeading heading={p.heading} subheading={p.subheading} ornament={p.showOrnament} />
       <BrandCollection
         brands={brands}
         layout={p.layout}
@@ -276,6 +278,7 @@ export const BrandGridSection: SectionComponent<'brandGrid'> = ({ section, ctx }
         ctaLabel={p.ctaLabel}
         labels={ctx.labels}
         id={section.id}
+        icons={{ discount: p.discountIcon, cta: p.ctaIcon }}
       />
     </Shell>
   );
@@ -290,8 +293,8 @@ export const BrandTabsSection: SectionComponent<'brandTabs'> = ({ section, ctx }
   if (!tabs.length) return null;
   return (
     <Shell section={section} className="section-tabs">
-      <SectionHeading heading={p.heading} subheading={p.subheading} />
-      <BrandTabs tabs={tabs} ctaLabel={p.ctaLabel} labels={ctx.labels} id={section.id} />
+      <SectionHeading heading={p.heading} subheading={p.subheading} ornament={p.showOrnament} />
+      <BrandTabs tabs={tabs} ctaLabel={p.ctaLabel} labels={ctx.labels} id={section.id} icons={{ discount: p.discountIcon, cta: p.ctaIcon }} />
     </Shell>
   );
 };
@@ -302,7 +305,7 @@ export const CategoriesSection: SectionComponent<'categories'> = ({ section, ctx
   if (!p.items.length) return null;
   return (
     <Shell section={section}>
-      <SectionHeading heading={p.heading} subheading={p.subheading} />
+      <SectionHeading heading={p.heading} subheading={p.subheading} ornament={p.showOrnament} />
       <ul className="categories">
         {p.items.map((c) => {
           const body = (
@@ -311,12 +314,12 @@ export const CategoriesSection: SectionComponent<'categories'> = ({ section, ctx
                 {c.image.url ? (
                   <Picture desktop={c.image} />
                 ) : (
-                  <Icon name="gift" size={36} />
+                  <SlotIcon slot={p.placeholderIcon} size={36} />
                 )}
               </span>
               {c.label && (
                 <span className="category-label">
-                  {c.label} <Icon name="arrowRight" size={14} />
+                  {c.label} <SlotIcon slot={p.linkIcon} size={14} />
                 </span>
               )}
             </>
@@ -345,7 +348,7 @@ export const ImageBannersSection: SectionComponent<'imageBanners'> = ({ section,
   if (!items.length) return null;
   return (
     <Shell section={section}>
-      <SectionHeading heading={p.heading} />
+      <SectionHeading heading={p.heading} ornament={p.showOrnament} />
       <div className="banners" style={{ '--cols': p.columns } as CSSProperties}>
         {items.map((b) => {
           const img = (
@@ -379,7 +382,8 @@ export const RichTextSection: SectionComponent<'richText'> = ({ section, ctx }) 
       <div className="rich-text">
         {p.heading && (
           <h2>
-            <span className="rich-text-mark" aria-hidden />
+            {p.showMark && <span className="rich-text-mark" aria-hidden />}
+            <SlotIcon slot={p.headingIcon} size={22} className="heading-icon" />
             {p.heading}
           </h2>
         )}
@@ -390,12 +394,14 @@ export const RichTextSection: SectionComponent<'richText'> = ({ section, ctx }) 
 };
 
 /* ---------- FAQ ---------- */
-function FaqHelp({ title, text, href }: { title: string; text: string; href: string }) {
+function FaqHelp({ title, text, href, icon }: { title: string; text: string; href: string; icon: IconSlot }) {
   const body = (
     <>
-      <span className="faq-help-icon">
-        <Icon name="message" size={22} />
-      </span>
+      {hasIcon(icon) && (
+        <span className="faq-help-icon">
+          <SlotIcon slot={icon} size={22} />
+        </span>
+      )}
       <span>
         {title && <strong>{title}</strong>}
         {text && <small>{text}</small>}
@@ -423,22 +429,26 @@ export const FaqSection: SectionComponent<'faq'> = ({ section }) => {
           <aside className="faq-aside">
             {p.eyebrow && <p className="eyebrow">{p.eyebrow}</p>}
             {p.heading && <h2>{p.heading}</h2>}
-            {(p.eyebrow || p.heading) && <span className="ornament left" aria-hidden />}
+            {p.showOrnament && (p.eyebrow || p.heading) && <span className="ornament left" aria-hidden />}
             {p.intro && <p>{p.intro}</p>}
-            {(p.helpTitle || p.helpText) && <FaqHelp title={p.helpTitle} text={p.helpText} href={p.helpHref} />}
+            {(p.helpTitle || p.helpText) && <FaqHelp title={p.helpTitle} text={p.helpText} href={p.helpHref} icon={p.helpIcon} />}
           </aside>
         )}
         <div className="faq">
           {items.map((q, i) => (
             <details key={q.id} className="faq-item" open={i === 0}>
               <summary>
-                <span className="faq-index" aria-hidden>
-                  {String(i + 1).padStart(2, '0')}
-                </span>
+                {p.showNumbers && (
+                  <span className="faq-index" aria-hidden>
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                )}
                 <h3>{q.question}</h3>
-                <span className="faq-toggle" aria-hidden>
-                  <Icon name="plus" size={18} />
-                </span>
+                {hasIcon(p.toggleIcon) && (
+                  <span className="faq-toggle" aria-hidden>
+                    <SlotIcon slot={p.toggleIcon} size={18} />
+                  </span>
+                )}
               </summary>
               <Html html={safeHtml(q.answer)} />
             </details>
@@ -456,7 +466,7 @@ export const TermsSection: SectionComponent<'terms'> = ({ section }) => {
   const body = <Html html={safeHtml(p.body)} className="terms-body" />;
   const title = (
     <h2>
-      <Icon name="shield" size={18} /> {p.heading || 'Terms & Conditions'}
+      <SlotIcon slot={p.headingIcon} size={18} /> {p.heading || 'Terms & Conditions'}
     </h2>
   );
   return (
@@ -465,7 +475,7 @@ export const TermsSection: SectionComponent<'terms'> = ({ section }) => {
         <details className="terms" open={p.defaultOpen}>
           <summary>
             {title}
-            <Icon name="chevronDown" size={18} className="terms-chevron" />
+            <SlotIcon slot={p.toggleIcon} size={18} className="terms-chevron" />
           </summary>
           {body}
         </details>
@@ -488,14 +498,14 @@ export const CtaSection: SectionComponent<'cta'> = ({ section, ctx }) => {
       <div className={`cta tone-${p.tone} ${p.backgroundImage.url ? 'has-bg' : ''}`}>
         {p.backgroundImage.url && <Picture desktop={p.backgroundImage} className="cta-bg" />}
         <span className="cta-glow" aria-hidden />
-        {!p.backgroundImage.url && <MotifGlyph motif={ctx.motif} size={200} className="cta-art" />}
+        {!p.backgroundImage.url && p.showArt && <MotifGlyph motif={ctx.motif} size={200} className="cta-art" />}
         <div className="cta-copy">
           {p.heading && <h2>{p.heading}</h2>}
           {p.text && <p>{p.text}</p>}
         </div>
         {p.button.label && p.button.href && (
           <SmartLink href={p.button.href} className="btn-primary">
-            {p.button.label} <Icon name="arrowRight" size={18} />
+            {p.button.label} <SlotIcon slot={p.buttonIcon} size={18} />
           </SmartLink>
         )}
       </div>

@@ -316,3 +316,6 @@ a.icon-btn { text-decoration: none; }
 .pane-divider-grip { position: absolute; top: 50%; left: 50%; width: 6px; height: 36px; margin: -18px 0 0 -3px; border-radius: 3px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 1px 2px rgb(0 0 0 / 8%); }
 .resizing-panes, .resizing-panes * { cursor: col-resize !important; user-select: none; }
 .resizing-panes iframe { pointer-events: none; }
+
+/* A text button that reads like a link (e.g. "Use your own image instead"). */
+.link-btn { align-self: flex-start; border: 0; background: none; padding: 0; color: var(--primary); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }

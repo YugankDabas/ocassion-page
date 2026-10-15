@@ -39,6 +39,9 @@ diwali-gifts-admin/
   ranges (a brand matches when its discount is above "from" and up to "to", so ranges leave no gaps) and
   categories (the category set on each brand in the panel; GyFTR's API has none).
   A cleared label or field leaves nothing behind on the page (no empty pill, box or line).
+  Every icon and decoration a section draws is set in that section's "Icons & decorations" group: another
+  built-in icon, your own image, or none (heading icons, button arrows, open / close toggles, the discount
+  icon, numbers, ornaments, medallions, artwork). The defaults are what the pages always showed.
 - **Built-in artwork** – 19 occasion illustrations drawn in code; any slide can use an uploaded creative instead.
 - **Live preview** – rendered by the same renderer as the published HTML.
 - **Publish** – renders embeddable HTML: classes prefixed, styles scoped, fonts embedded, images on S3 / CDN.

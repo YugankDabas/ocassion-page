@@ -6,7 +6,7 @@ import {
   pageContentSchema,
   themeSchema,
   type PageContent,
-  type Section,
+  type SectionInput,
 } from '../../contracts';
 import { itemId } from '../../lib/ids';
 
@@ -42,7 +42,7 @@ export class TemplateFactory implements ITemplateFactory {
 
   createDefault(occasion: OccasionForTemplate, featuredBrandIds: string[]): PageContent {
     const o = occasion;
-    const sections: Section[] = [
+    const sections: SectionInput[] = [
       {
         id: itemId('s_'),
         type: 'hero',

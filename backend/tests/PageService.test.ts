@@ -9,7 +9,7 @@ import { ConflictError, ValidationError } from '../src/lib/errors';
 import type { IBrandRepository, OccasionRecord } from '../src/repositories/types';
 import { AuditService } from '../src/services/AuditService';
 import { PageService } from '../src/services/PageService';
-import { siteSettingsSchema } from '../src/contracts';
+import { sectionSchema, siteSettingsSchema } from '../src/contracts';
 import { PageRenderer } from '../src/render/PageRenderer';
 import { PagePayloadService } from '../src/services/PagePayloadService';
 import { PublicationService } from '../src/services/PublicationService';
@@ -141,7 +141,7 @@ describe('PageService', () => {
     const page = await ctx.service.create(actor, { occasionId: occasion.id, title: 'Diwali', pageUrl: `${BASE}/diwali-gift-cards`, templateId: 'default' });
     const content = structuredClone(page.draft);
     content.sections = content.sections.filter((s) => s.type !== 'terms');
-    content.sections.push({
+    content.sections.push(sectionSchema.parse({
       id: 'terms-x',
       type: 'terms',
       visible: true,
@@ -154,7 +154,7 @@ describe('PageService', () => {
         collapsible: false,
         defaultOpen: true,
       },
-    });
+    }));
     const saved = await ctx.service.saveDraft(actor, page.id, { expectedVersion: 1, content });
     const terms = saved.draft.sections.find((s) => s.id === 'terms-x');
     expect(terms?.type === 'terms' && terms.props.body).not.toContain('x.png'); // only full http(s) image addresses are kept
@@ -232,6 +232,44 @@ describe('PageService', () => {
     expect(await chips()).toEqual(['All', 'Small savings [0, 3]', 'e-commerce [category e-commerce]']);
     // The cards carry what the page script filters on.
     expect(ctx.hosted('diwali-gift-cards')!.html).toContain("data-category='E-Commerce'");
+  });
+
+  it('draws every section icon and decoration as set in the panel: another icon, an image, or none', async () => {
+    const page = await ctx.service.create(actor, { occasionId: occasion.id, title: 'Diwali', pageUrl: `${BASE}/diwali-gift-cards`, templateId: 'default' });
+    await ctx.publications.publish(actor, page.id, 1);
+    const before = ctx.hosted('diwali-gift-cards')!.html;
+    // Defaults draw what the pages always had: the T&C shield, the FAQ "+", numbers and ornaments.
+    expect(before).toContain("class='occ-faq-toggle'");
+    expect(before).toContain("class='occ-faq-index'");
+    expect(before).toContain("class='occ-ornament");
+    expect(before).toContain(`<path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4'`); // the shield
+
+    const content = structuredClone(page.draft);
+    const none = { name: 'none' as const, image: { url: '', alt: '' } };
+    for (const s of content.sections) {
+      if (s.type === 'terms') Object.assign(s.props, { headingIcon: { name: 'none', image: { url: 'https://cdn.gyftr.com/rules.png', alt: '' } }, toggleIcon: none });
+      if (s.type === 'faq') Object.assign(s.props, { toggleIcon: none, helpIcon: { name: 'star', image: { url: '', alt: '' } }, showNumbers: false, showOrnament: false });
+      if (s.type === 'features') Object.assign(s.props, { showNumbers: false, showOrnament: false });
+      if (s.type === 'brandGrid' || s.type === 'brandTabs') Object.assign(s.props, { discountIcon: none, ctaIcon: none, showOrnament: false });
+      if (s.type === 'intro') Object.assign(s.props, { showOrnament: false, showDecorations: false });
+      if (s.type === 'richText') Object.assign(s.props, { showMark: false });
+      if (s.type === 'hero') Object.assign(s.props, { ctaIcon: none });
+    }
+    await ctx.service.saveDraft(actor, page.id, { expectedVersion: 1, content });
+    await ctx.publications.publish(actor, page.id, 2);
+    const html = ctx.hosted('diwali-gift-cards')!.html;
+
+    expect(JSON.stringify(html)).toBe(`"${html}"`); // still JSON-safe
+    expect(html).toContain("<img src='https://cdn.gyftr.com/rules.png' alt='' width='18' height='18' loading='lazy' class='occ-slot-icon' aria-hidden='true'/>"); // the T&C icon is the uploaded image
+    const terms = /<section[^>]*data-section='terms'[\s\S]*?<\/section>/.exec(html)![0];
+    expect(terms).not.toContain('<svg'); // no shield, no open / close arrow: only the uploaded image
+    expect(html).not.toContain("class='occ-faq-toggle'");
+    expect(html).not.toContain("class='occ-faq-index'");
+    expect(html).not.toContain("class='occ-feature-num'");
+    expect(html).not.toContain("class='occ-ornament");
+    expect(html).not.toContain("class='occ-rich-text-mark'");
+    expect(html).not.toMatch(/occ-brand-discount'><svg/); // no ticket icon before the discount
+    expect(html).toContain('M12 3l2.7 5.6'); // the FAQ help box now shows a star
   });
 
   it('stores the top banner images and the published flag for gyftr.com', async () => {
@@ -347,7 +385,7 @@ describe('PageService', () => {
 
   it('moves the hosted page when its URL changes', async () => {
     const page = await ctx.service.create(actor, { occasionId: occasion.id, title: 'Diwali', pageUrl: `${BASE}/diwali-old`, templateId: 'blank' });
-    const content = { ...page.draft, sections: [{ id: 's1', type: 'intro' as const, visible: true, anchor: '', props: { eyebrow: '', heading: 'Hi', body: '', align: 'center' as const, tone: 'surface' as const } }] };
+    const content = { ...page.draft, sections: [sectionSchema.parse({ id: 's1', type: 'intro', visible: true, anchor: '', props: { eyebrow: '', heading: 'Hi', body: '', align: 'center', tone: 'surface' } })] };
     await ctx.service.saveDraft(actor, page.id, { expectedVersion: 1, content });
     await ctx.publications.publish(actor, page.id, 2);
     const renamed = await ctx.service.saveDraft(actor, page.id, { expectedVersion: 2, pageUrl: `${BASE}/diwali-new`, content });

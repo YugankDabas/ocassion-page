@@ -1,4 +1,5 @@
-import { Icon } from '../icons';
+import type { IconSlot } from '../../../contracts';
+import { SlotIcon } from '../icons';
 import type { BrandCardData, Labels } from './types';
 
 /** Card faces for brands without a logo: a stable gradient per brand, mixed from the occasion theme so the grid matches the page. */
@@ -26,6 +27,11 @@ function monogram(name: string): string {
 
 const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 
+export interface BrandCardIcons {
+  discount: IconSlot;
+  cta: IconSlot;
+}
+
 /** One gift-card tile. The whole card links to the brand's voucher page on gyftr.com. */
 export function BrandCard({
   brand,
@@ -33,12 +39,15 @@ export function BrandCard({
   position,
   labels,
   hidden,
+  icons,
 }: {
   brand: BrandCardData;
   ctaLabel: string;
   position?: number;
   labels: Labels;
   hidden?: boolean;
+  /** Set in the panel per section: before the discount, after the button text. */
+  icons: BrandCardIcons;
 }) {
   const redemption = { ONLINE: labels.redeemOnline, OFFLINE: labels.redeemOffline, BOTH: labels.redeemBoth }[brand.redemption];
   const [from, to] = face(brand.name);
@@ -89,14 +98,14 @@ export function BrandCard({
           {/* An empty label leaves nothing behind: no empty pill, box or line anywhere on the card. */}
           {brand.discountText ? (
             <span className="brand-discount">
-              <Icon name="ticket" size={14} /> {brand.discountText}
+              <SlotIcon slot={icons.discount} size={14} /> {brand.discountText}
             </span>
           ) : (
             labels.noDiscount && <span className="brand-discount muted">{labels.noDiscount}</span>
           )}
           {ctaLabel && (
             <span className="brand-cta">
-              {ctaLabel} <Icon name="arrowRight" size={14} />
+              {ctaLabel} <SlotIcon slot={icons.cta} size={14} />
             </span>
           )}
         </span>

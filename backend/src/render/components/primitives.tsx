@@ -48,12 +48,23 @@ export function Picture({ desktop, mobile, priority, className }: PictureProps) 
   );
 }
 
-export function SectionHeading({ heading, subheading, align = 'center' }: { heading: string; subheading?: string; align?: 'left' | 'center' }) {
+export function SectionHeading({
+  heading,
+  subheading,
+  align = 'center',
+  ornament = true,
+}: {
+  heading: string;
+  subheading?: string;
+  align?: 'left' | 'center';
+  /** The small decorative line under the heading. */
+  ornament?: boolean;
+}) {
   if (!heading && !subheading) return null;
   return (
     <header className={`section-heading align-${align}`}>
       {heading && <h2>{heading}</h2>}
-      <span className={`ornament ${align === 'left' ? 'left' : ''}`} aria-hidden />
+      {ornament && <span className={`ornament ${align === 'left' ? 'left' : ''}`} aria-hidden />}
       {subheading && <p>{subheading}</p>}
     </header>
   );

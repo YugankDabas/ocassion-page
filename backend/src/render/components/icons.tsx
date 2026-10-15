@@ -1,4 +1,5 @@
 import type { SVGProps } from 'react';
+import type { IconSlot } from '../../contracts';
 
 /** Small inline stroke icon set (no icon-font / external requests). */
 const PATHS = {
@@ -57,3 +58,16 @@ export function Icon({ name, size = 20, strokeWidth = 2, ...rest }: { name: Icon
     </svg>
   );
 }
+
+/** An icon set in the panel (IconSlot): the uploaded image, the built-in icon, or nothing for 'none'. */
+export function SlotIcon({ slot, size = 20, className }: { slot: IconSlot | undefined; size?: number; className?: string }) {
+  if (!slot) return null;
+  if (slot.image.url) {
+    return <img src={slot.image.url} alt="" width={size} height={size} loading="lazy" className={`slot-icon ${className ?? ''}`.trim()} aria-hidden />;
+  }
+  if (slot.name === 'none' || !(slot.name in PATHS)) return null;
+  return <Icon name={slot.name as IconName} size={size} className={className} />;
+}
+
+/** Whether a slot draws anything. */
+export const hasIcon = (slot: IconSlot | undefined) => Boolean(slot && (slot.image.url || slot.name !== 'none'));

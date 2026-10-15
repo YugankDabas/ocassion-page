@@ -81,8 +81,22 @@ export const label = (fallback: string, max = 120) => z.string().trim().max(max)
 export const ICONS = [
   'zap', 'ticket', 'coins', 'shield', 'lock', 'gift', 'sparkles', 'message', 'mail', 'check',
   'search', 'cart', 'user', 'heart', 'star', 'truck', 'clock', 'phone', 'tag', 'percent',
+  'arrowRight', 'chevronDown', 'plus',
 ] as const;
 export type IconName = (typeof ICONS)[number];
+
+/**
+ * An icon a section draws (a heading icon, a button arrow, a toggle, ...), chosen in the panel: one of the
+ * built-in icons, 'none' to leave it out, or an uploaded image that replaces it.
+ */
+export const iconSlot = (fallback: IconName | 'none') =>
+  z
+    .object({
+      name: z.enum(['none', ...ICONS]).default(fallback),
+      image: imageSchema.default({}),
+    })
+    .default({});
+export type IconSlot = z.infer<ReturnType<typeof iconSlot>>;
 
 /** Stable id for list items so drag-and-drop and React keys survive reorders. */
 export const itemIdSchema = z

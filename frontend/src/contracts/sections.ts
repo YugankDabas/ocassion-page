@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { hrefSchema, html, iconItemSchema, imageSchema, itemIdSchema, label, linkSchema, text } from './primitives';
+import { hrefSchema, html, iconItemSchema, iconSlot, imageSchema, itemIdSchema, label, linkSchema, text } from './primitives';
 import { MOTIFS } from './theme';
 
 /**
@@ -46,6 +46,8 @@ const envelope = {
 };
 
 const toneSchema = z.enum(['primary', 'surface', 'accent', 'transparent']).default('surface');
+/** The small decorative line under a section heading. */
+const showOrnament = z.boolean().default(true);
 const alignSchema = z.enum(['left', 'center']).default('center');
 const brandIdSchema = z.string().uuid();
 
@@ -78,6 +80,8 @@ export const heroPropsSchema = z.object({
   slides: z.array(heroSlideSchema).max(10).default([]),
   autoplayMs: z.number().int().min(0).max(20_000).default(5000),
   height: z.enum(['compact', 'standard', 'tall']).default('standard'),
+  /** Arrow after each slide's button text. */
+  ctaIcon: iconSlot('arrowRight'),
   /** GyFTR trust strip under the banner (instant delivery, secure payments, ...). */
   showTrustBar: z.boolean().default(true),
   trustItems: z
@@ -98,6 +102,9 @@ export const introPropsSchema = z.object({
   body: html(10_000),
   align: alignSchema,
   tone: toneSchema,
+  showOrnament,
+  /** The two occasion medallions at the sides (with the theme-colour background). */
+  showDecorations: z.boolean().default(true),
 });
 
 /* ---------- Feature / USP highlights ---------- */
@@ -114,6 +121,9 @@ export const featuresPropsSchema = z.object({
   columns: z.number().int().min(2).max(5).default(4),
   items: z.array(featureItemSchema).max(12).default([]),
   tone: toneSchema,
+  /** The large 01, 02, ... in the corner of each card. */
+  showNumbers: z.boolean().default(true),
+  showOrnament,
 });
 
 /* ---------- Brand grid / carousel ---------- */
@@ -184,6 +194,11 @@ export const brandGridPropsSchema = z.object({
   /** Leave out a filter no brand in this grid falls into. */
   hideEmptyFilters: z.boolean().default(false),
   ctaLabel: text(30),
+  /** Icon before the discount on each card ("Save 5%"). */
+  discountIcon: iconSlot('ticket'),
+  /** Arrow after the card button text. */
+  ctaIcon: iconSlot('arrowRight'),
+  showOrnament,
 });
 
 /* ---------- Tabbed brand collections ("Who are you gifting?") ---------- */
@@ -198,6 +213,9 @@ export const brandTabsPropsSchema = z.object({
   subheading: text(300),
   tabs: z.array(brandTabSchema).max(12).default([]),
   ctaLabel: text(30),
+  discountIcon: iconSlot('ticket'),
+  ctaIcon: iconSlot('arrowRight'),
+  showOrnament,
 });
 
 /* ---------- Category tiles ---------- */
@@ -211,6 +229,11 @@ export const categoriesPropsSchema = z.object({
   heading: text(160),
   subheading: text(300),
   items: z.array(categoryItemSchema).max(24).default([]),
+  /** Shown on a tile that has no image. */
+  placeholderIcon: iconSlot('gift'),
+  /** Arrow after the tile label (appears on hover). */
+  linkIcon: iconSlot('arrowRight'),
+  showOrnament,
 });
 
 /* ---------- Promotional image banners ---------- */
@@ -224,6 +247,7 @@ export const imageBannersPropsSchema = z.object({
   heading: text(160),
   columns: z.number().int().min(1).max(3).default(2),
   items: z.array(bannerItemSchema).max(12).default([]),
+  showOrnament,
 });
 
 /* ---------- Long-form rich text (SEO content) ---------- */
@@ -232,6 +256,10 @@ export const richTextPropsSchema = z.object({
   body: html(),
   collapsible: z.boolean().default(true),
   tone: toneSchema,
+  /** The coloured mark before the heading. */
+  showMark: z.boolean().default(true),
+  /** Icon before the heading. */
+  headingIcon: iconSlot('none'),
 });
 
 /* ---------- FAQs ---------- */
@@ -250,6 +278,13 @@ export const faqPropsSchema = z.object({
   helpHref: hrefSchema.default(''),
   items: z.array(faqItemSchema).max(50).default([]),
   emitStructuredData: z.boolean().default(true),
+  /** Icon of the "Still have a question?" box. */
+  helpIcon: iconSlot('message'),
+  /** Open / close button of each question (turns when open). */
+  toggleIcon: iconSlot('plus'),
+  /** The 01, 02, ... before each question. */
+  showNumbers: z.boolean().default(true),
+  showOrnament,
 });
 
 /* ---------- Terms & conditions ---------- */
@@ -258,6 +293,10 @@ export const termsPropsSchema = z.object({
   body: html(),
   collapsible: z.boolean().default(true),
   defaultOpen: z.boolean().default(false),
+  /** Icon before the heading. */
+  headingIcon: iconSlot('shield'),
+  /** Open / close arrow (turns when open). */
+  toggleIcon: iconSlot('chevronDown'),
 });
 
 /* ---------- Call to action ---------- */
@@ -267,6 +306,10 @@ export const ctaPropsSchema = z.object({
   button: linkSchema.default({}),
   backgroundImage: imageSchema.default({}),
   tone: toneSchema,
+  /** Arrow after the button text. */
+  buttonIcon: iconSlot('arrowRight'),
+  /** The occasion artwork in the corner (when there is no background image). */
+  showArt: z.boolean().default(true),
 });
 
 export const sectionSchema = z.discriminatedUnion('type', [
@@ -284,6 +327,8 @@ export const sectionSchema = z.discriminatedUnion('type', [
 ]);
 
 export type Section = z.infer<typeof sectionSchema>;
+/** A section as written, before defaults are filled in (a template, a test). */
+export type SectionInput = z.input<typeof sectionSchema>;
 export type SectionType = Section['type'];
 export type SectionOf<T extends SectionType> = Extract<Section, { type: T }>;
 export type SectionProps<T extends SectionType> = SectionOf<T>['props'];

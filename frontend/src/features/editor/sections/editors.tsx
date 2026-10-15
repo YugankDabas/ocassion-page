@@ -2,6 +2,7 @@ import { useId } from 'react';
 import { DEFAULT_BRAND_FILTERS, MOTIFS, brandFilterLabel, brandMatchesFilter, type BrandFilter, type SectionProps, type SectionType } from '../../../contracts';
 import { BrandPicker } from '../../../components/fields/BrandPicker';
 import { IconItemsEditor } from '../../../components/fields/IconItemsEditor';
+import { IconSlotField } from '../../../components/fields/IconSlotField';
 import { ImageField } from '../../../components/fields/ImageField';
 import { RichTextEditor } from '../../../components/fields/RichTextEditor';
 import { ListEditor } from '../../../components/fields/SortableList';
@@ -124,6 +125,10 @@ export function HeroEditor({ props, onChange }: EditorProps<'hero'>) {
           </>
         )}
       />
+      <fieldset className="group stack">
+        <legend>Icons &amp; decorations</legend>
+          <IconSlotField label="Icon after the slide button text" value={props.ctaIcon} onChange={(ctaIcon) => onChange({ ctaIcon })} />
+      </fieldset>
     </div>
   );
 }
@@ -139,6 +144,11 @@ export function IntroEditor({ props, onChange }: EditorProps<'intro'>) {
         <Select label="Alignment" value={props.align} onChange={(align) => onChange({ align })} options={[{ value: 'center', label: 'Centered' }, { value: 'left', label: 'Left' }]} />
         <Select label="Background" value={props.tone} onChange={(tone) => onChange({ tone })} options={toneOptions} />
       </div>
+      <fieldset className="group stack">
+        <legend>Icons &amp; decorations</legend>
+          <Toggle label="Line under the heading" checked={props.showOrnament} onChange={(showOrnament) => onChange({ showOrnament })} />
+          <Toggle label="Side medallions (with the theme-colour background)" checked={props.showDecorations} onChange={(showDecorations) => onChange({ showDecorations })} />
+      </fieldset>
     </div>
   );
 }
@@ -172,6 +182,11 @@ export function FeaturesEditor({ props, onChange }: EditorProps<'features'>) {
           </>
         )}
       />
+      <fieldset className="group stack">
+        <legend>Icons &amp; decorations</legend>
+          <Toggle label="Line under the heading" checked={props.showOrnament} onChange={(showOrnament) => onChange({ showOrnament })} />
+          <Toggle label="Numbers (01, 02, …) on the cards" checked={props.showNumbers} onChange={(showNumbers) => onChange({ showNumbers })} />
+      </fieldset>
     </div>
   );
 }
@@ -201,6 +216,12 @@ export function BrandGridEditor({ props, onChange }: EditorProps<'brandGrid'>) {
         />
       )}
       <BrandPicker label="Brands" value={props.brands} onChange={(brands) => onChange({ brands })} />
+      <fieldset className="group stack">
+        <legend>Icons &amp; decorations</legend>
+          <IconSlotField label="Icon before the discount" value={props.discountIcon} onChange={(discountIcon) => onChange({ discountIcon })} />
+          <IconSlotField label="Icon after the card button text" value={props.ctaIcon} onChange={(ctaIcon) => onChange({ ctaIcon })} />
+          <Toggle label="Line under the heading" checked={props.showOrnament} onChange={(showOrnament) => onChange({ showOrnament })} />
+      </fieldset>
     </div>
   );
 }
@@ -366,6 +387,12 @@ export function BrandTabsEditor({ props, onChange }: EditorProps<'brandTabs'>) {
           </>
         )}
       />
+      <fieldset className="group stack">
+        <legend>Icons &amp; decorations</legend>
+          <IconSlotField label="Icon before the discount" value={props.discountIcon} onChange={(discountIcon) => onChange({ discountIcon })} />
+          <IconSlotField label="Icon after the card button text" value={props.ctaIcon} onChange={(ctaIcon) => onChange({ ctaIcon })} />
+          <Toggle label="Line under the heading" checked={props.showOrnament} onChange={(showOrnament) => onChange({ showOrnament })} />
+      </fieldset>
     </div>
   );
 }
@@ -392,6 +419,12 @@ export function CategoriesEditor({ props, onChange }: EditorProps<'categories'>)
           </>
         )}
       />
+      <fieldset className="group stack">
+        <legend>Icons &amp; decorations</legend>
+          <IconSlotField label="Icon on a tile without an image" value={props.placeholderIcon} onChange={(placeholderIcon) => onChange({ placeholderIcon })} />
+          <IconSlotField label="Icon after the tile label" value={props.linkIcon} onChange={(linkIcon) => onChange({ linkIcon })} />
+          <Toggle label="Line under the heading" checked={props.showOrnament} onChange={(showOrnament) => onChange({ showOrnament })} />
+      </fieldset>
     </div>
   );
 }
@@ -423,6 +456,10 @@ export function ImageBannersEditor({ props, onChange }: EditorProps<'imageBanner
           </>
         )}
       />
+      <fieldset className="group stack">
+        <legend>Icons &amp; decorations</legend>
+          <Toggle label="Line under the heading" checked={props.showOrnament} onChange={(showOrnament) => onChange({ showOrnament })} />
+      </fieldset>
     </div>
   );
 }
@@ -439,6 +476,11 @@ export function RichTextSectionEditor({ props, onChange }: EditorProps<'richText
           <Toggle label="Collapse with “Read more”" checked={props.collapsible} onChange={(collapsible) => onChange({ collapsible })} />
         </Field>
       </div>
+      <fieldset className="group stack">
+        <legend>Icons &amp; decorations</legend>
+          <IconSlotField label="Icon before the heading" value={props.headingIcon} onChange={(headingIcon) => onChange({ headingIcon })} />
+          <Toggle label="Coloured mark before the heading" checked={props.showMark} onChange={(showMark) => onChange({ showMark })} />
+      </fieldset>
     </div>
   );
 }
@@ -478,6 +520,13 @@ export function FaqEditor({ props, onChange }: EditorProps<'faq'>) {
           </>
         )}
       />
+      <fieldset className="group stack">
+        <legend>Icons &amp; decorations</legend>
+          <IconSlotField label="Icon of the “Still have a question?” box" value={props.helpIcon} onChange={(helpIcon) => onChange({ helpIcon })} />
+          <IconSlotField label="Open / close icon of each question" value={props.toggleIcon} onChange={(toggleIcon) => onChange({ toggleIcon })} />
+          <Toggle label="Numbers (01, 02, …) before the questions" checked={props.showNumbers} onChange={(showNumbers) => onChange({ showNumbers })} />
+          <Toggle label="Line under the heading" checked={props.showOrnament} onChange={(showOrnament) => onChange({ showOrnament })} />
+      </fieldset>
     </div>
   );
 }
@@ -499,6 +548,11 @@ export function TermsEditor({ props, onChange }: EditorProps<'terms'>) {
         <Toggle label="Collapsible" checked={props.collapsible} onChange={(collapsible) => onChange({ collapsible })} />
         {props.collapsible && <Toggle label="Open by default" checked={props.defaultOpen} onChange={(defaultOpen) => onChange({ defaultOpen })} />}
       </div>
+      <fieldset className="group stack">
+        <legend>Icons &amp; decorations</legend>
+          <IconSlotField label="Icon before the heading" value={props.headingIcon} onChange={(headingIcon) => onChange({ headingIcon })} />
+          <IconSlotField label="Open / close icon" value={props.toggleIcon} onChange={(toggleIcon) => onChange({ toggleIcon })} />
+      </fieldset>
     </div>
   );
 }
@@ -515,6 +569,11 @@ export function CtaEditor({ props, onChange }: EditorProps<'cta'>) {
       </div>
       <Select label="Background" value={props.tone} onChange={(tone) => onChange({ tone })} options={toneOptions} />
       <ImageField label="Background image (optional)" value={props.backgroundImage} onChange={(backgroundImage) => onChange({ backgroundImage })} />
+      <fieldset className="group stack">
+        <legend>Icons &amp; decorations</legend>
+          <IconSlotField label="Icon after the button text" value={props.buttonIcon} onChange={(buttonIcon) => onChange({ buttonIcon })} />
+          <Toggle label="Occasion artwork (when there is no background image)" checked={props.showArt} onChange={(showArt) => onChange({ showArt })} />
+      </fieldset>
     </div>
   );
 }

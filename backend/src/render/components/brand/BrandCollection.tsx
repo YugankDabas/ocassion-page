@@ -1,5 +1,5 @@
 import { brandFilterLabel, brandMatchesFilter, type BrandFilter } from '../../../contracts';
-import { BrandCard } from './BrandCard';
+import { BrandCard, type BrandCardIcons } from './BrandCard';
 import type { BrandCardData, Labels } from './types';
 
 interface Props {
@@ -11,6 +11,7 @@ interface Props {
   /** Filter chips after "All" (discount ranges, categories), as set in the panel. */
   filters: BrandFilter[];
   hideEmptyFilters: boolean;
+  icons: BrandCardIcons;
   ctaLabel: string;
   labels: Labels;
   /** Unique per section; used for the search field's label. */
@@ -22,7 +23,7 @@ interface Props {
  * paging (grid) or a scroll-snap carousel. Every brand is in the markup (good
  * for SEO); the page script shows / hides cards as the visitor filters.
  */
-export function BrandCollection({ brands, layout, initialCount, showSearch, showDiscountFilter, filters: allFilters, hideEmptyFilters, ctaLabel, labels, id }: Props) {
+export function BrandCollection({ brands, layout, initialCount, showSearch, showDiscountFilter, filters: allFilters, hideEmptyFilters, ctaLabel, labels, id, icons }: Props) {
   if (brands.length === 0) return null;
   const isCarousel = layout === 'carousel';
   const filters = allFilters.filter((f) => !hideEmptyFilters || brands.some((b) => brandMatchesFilter(f, b)));
@@ -68,7 +69,7 @@ export function BrandCollection({ brands, layout, initialCount, showSearch, show
           </button>
           <div className="carousel-track" tabIndex={0} aria-label="Gift cards">
             {brands.map((b, i) => (
-              <BrandCard key={b.id} brand={b} ctaLabel={ctaLabel} position={i + 1} labels={labels} />
+              <BrandCard key={b.id} brand={b} ctaLabel={ctaLabel} position={i + 1} labels={labels} icons={icons} />
             ))}
           </div>
           <button type="button" className="carousel-btn next" aria-label="Scroll right">
@@ -79,7 +80,7 @@ export function BrandCollection({ brands, layout, initialCount, showSearch, show
         <>
           <div className="brand-grid" aria-live="polite">
             {brands.map((b, i) => (
-              <BrandCard key={b.id} brand={b} ctaLabel={ctaLabel} position={i + 1} labels={labels} hidden={i >= initialCount} />
+              <BrandCard key={b.id} brand={b} ctaLabel={ctaLabel} position={i + 1} labels={labels} hidden={i >= initialCount} icons={icons} />
             ))}
           </div>
           {brands.length > initialCount && (

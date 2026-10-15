@@ -1,4 +1,4 @@
-import { BrandCard } from './BrandCard';
+import { BrandCard, type BrandCardIcons } from './BrandCard';
 import type { BrandCardData, Labels } from './types';
 
 export interface TabData {
@@ -9,7 +9,7 @@ export interface TabData {
 }
 
 /** Accessible tablist markup (first tab open). The page script handles clicks and arrow-key navigation. */
-export function BrandTabs({ tabs, ctaLabel, labels, id }: { tabs: TabData[]; ctaLabel: string; labels: Labels; id: string }) {
+export function BrandTabs({ tabs, ctaLabel, labels, id, icons }: { tabs: TabData[]; ctaLabel: string; labels: Labels; id: string; icons: BrandCardIcons }) {
   return (
     <div className="brand-tabs">
       <div className="tablist" role="tablist">
@@ -34,7 +34,7 @@ export function BrandTabs({ tabs, ctaLabel, labels, id }: { tabs: TabData[]; cta
           {t.brands.length ? (
             <div className="brand-grid">
               {t.brands.map((b, j) => (
-                <BrandCard key={b.id} brand={b} ctaLabel={ctaLabel} position={j + 1} labels={labels} />
+                <BrandCard key={b.id} brand={b} ctaLabel={ctaLabel} position={j + 1} labels={labels} icons={icons} />
               ))}
             </div>
           ) : (
