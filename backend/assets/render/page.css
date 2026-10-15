@@ -378,6 +378,7 @@ small { font-size: inherit; }
    FAQ
    ========================================================================== */
 .faq-layout { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.5fr); gap: clamp(28px, 5vw, 64px); align-items: start; }
+.faq-layout.no-aside { grid-template-columns: minmax(0, 1fr); }
 .faq-aside { position: sticky; top: 150px; }
 .faq-aside h2 { margin-bottom: 4px; }
 .faq-aside > p:not(.eyebrow) { color: var(--c-muted); margin: 18px 0 24px; }

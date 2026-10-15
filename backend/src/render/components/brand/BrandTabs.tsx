@@ -38,7 +38,7 @@ export function BrandTabs({ tabs, ctaLabel, labels, id }: { tabs: TabData[]; cta
               ))}
             </div>
           ) : (
-            <p className="brand-empty">{labels.comingSoon}</p>
+            labels.comingSoon && <p className="brand-empty">{labels.comingSoon}</p>
           )}
         </div>
       ))}

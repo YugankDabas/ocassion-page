@@ -42,6 +42,7 @@ export function BrandCard({
 }) {
   const redemption = { ONLINE: labels.redeemOnline, OFFLINE: labels.redeemOffline, BOTH: labels.redeemBoth }[brand.redemption];
   const [from, to] = face(brand.name);
+  const meta = [redemption, brand.minDenomination ? `${labels.priceFrom} ${inr.format(brand.minDenomination)}`.trim() : ''].filter(Boolean).join(' · ');
   return (
     <a
       className="brand-card"
@@ -83,16 +84,15 @@ export function BrandCard({
 
       <span className="brand-body">
         <span className="brand-name">{brand.name}</span>
-        <span className="brand-meta">
-          {[redemption, brand.minDenomination ? `${labels.priceFrom} ${inr.format(brand.minDenomination)}`.trim() : ''].filter(Boolean).join(' · ')}
-        </span>
+        {meta && <span className="brand-meta">{meta}</span>}
         <span className="brand-foot">
+          {/* An empty label leaves nothing behind: no empty pill, box or line anywhere on the card. */}
           {brand.discountText ? (
             <span className="brand-discount">
               <Icon name="ticket" size={14} /> {brand.discountText}
             </span>
           ) : (
-            <span className="brand-discount muted">{labels.noDiscount}</span>
+            labels.noDiscount && <span className="brand-discount muted">{labels.noDiscount}</span>
           )}
           {ctaLabel && (
             <span className="brand-cta">

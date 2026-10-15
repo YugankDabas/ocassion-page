@@ -79,12 +79,13 @@ function GiftPhone({ motif, title, greeting, brands }: { motif: ResolvedMotif; t
   return (
     <div className="phone" aria-hidden>
       <div className="phone-screen">
-        <span className="phone-notch" />
+        <span className="phone-notch" aria-hidden />
         <div className="gcard">
           <MotifGlyph motif={motif} size={74} className="gcard-art" />
-          <span className="gcard-title">{title}</span>
+          {title && <span className="gcard-title">{title}</span>}
         </div>
         {greeting && <p className="gcard-greeting">{greeting}</p>}
+        {offers.length > 0 && (
         <ul className="phone-offers">
           {offers.map((b) => (
             <li key={b.id}>
@@ -93,6 +94,7 @@ function GiftPhone({ motif, title, greeting, brands }: { motif: ResolvedMotif; t
             </li>
           ))}
         </ul>
+        )}
       </div>
     </div>
   );
@@ -191,10 +193,12 @@ export const HeroSection: SectionComponent<'hero'> = ({ section, ctx }) => {
                 <span className="trust-icon">
                   <ItemIcon item={t} size={20} />
                 </span>
-                <span>
-                  <strong>{t.title}</strong>
-                  <small>{t.text}</small>
-                </span>
+                {(t.title || t.text) && (
+                  <span>
+                    {t.title && <strong>{t.title}</strong>}
+                    {t.text && <small>{t.text}</small>}
+                  </span>
+                )}
               </li>
             ))}
           </ul>
@@ -207,6 +211,7 @@ export const HeroSection: SectionComponent<'hero'> = ({ section, ctx }) => {
 /* ---------- Intro ---------- */
 export const IntroSection: SectionComponent<'intro'> = ({ section, ctx }) => {
   const p = section.props;
+  if (!p.eyebrow && !p.heading && !p.body) return null;
   return (
     <Shell section={section} tone={p.tone} className="section-intro">
       {p.tone === 'primary' && (
@@ -218,8 +223,8 @@ export const IntroSection: SectionComponent<'intro'> = ({ section, ctx }) => {
       <div className={`intro align-${p.align}`}>
         {p.eyebrow && <p className="eyebrow">{p.eyebrow}</p>}
         {p.heading && (ctx.index === 0 ? <h1>{p.heading}</h1> : <h2>{p.heading}</h2>)}
-        <span className="ornament" aria-hidden />
-        <Html html={safeHtml(p.body)} />
+        {(p.eyebrow || p.heading) && <span className="ornament" aria-hidden />}
+        {p.body && <Html html={safeHtml(p.body)} />}
       </div>
     </Shell>
   );
@@ -238,10 +243,12 @@ export const FeaturesSection: SectionComponent<'features'> = ({ section, ctx }) 
             <span className="feature-num" aria-hidden>
               {String(i + 1).padStart(2, '0')}
             </span>
-            <span className="feature-icon" aria-hidden>
-              {f.icon.url ? <Picture desktop={f.icon} /> : f.emoji}
-            </span>
-            <h3>{f.title}</h3>
+            {(f.icon.url || f.emoji) && (
+              <span className="feature-icon" aria-hidden>
+                {f.icon.url ? <Picture desktop={f.icon} /> : f.emoji}
+              </span>
+            )}
+            {f.title && <h3>{f.title}</h3>}
             {f.description && <p>{f.description}</p>}
           </li>
         ))}
@@ -264,6 +271,8 @@ export const BrandGridSection: SectionComponent<'brandGrid'> = ({ section, ctx }
         initialCount={p.initialCount}
         showSearch={p.showSearch}
         showDiscountFilter={p.showDiscountFilter}
+        discountFilters={p.discountFilters}
+        hideEmptyFilters={p.hideEmptyFilters}
         ctaLabel={p.ctaLabel}
         labels={ctx.labels}
         id={section.id}
@@ -305,9 +314,11 @@ export const CategoriesSection: SectionComponent<'categories'> = ({ section, ctx
                   <Icon name="gift" size={36} />
                 )}
               </span>
-              <span className="category-label">
-                {c.label} <Icon name="arrowRight" size={14} />
-              </span>
+              {c.label && (
+                <span className="category-label">
+                  {c.label} <Icon name="arrowRight" size={14} />
+                </span>
+              )}
             </>
           );
           return (
@@ -404,16 +415,19 @@ export const FaqSection: SectionComponent<'faq'> = ({ section }) => {
   const p = section.props;
   const items = p.items.filter((q) => q.question && q.answer);
   if (!items.length) return null;
+  const hasAside = Boolean(p.eyebrow || p.heading || p.intro || p.helpTitle || p.helpText);
   return (
     <Shell section={section} className="section-faq">
-      <div className="faq-layout">
-        <aside className="faq-aside">
-          {p.eyebrow && <p className="eyebrow">{p.eyebrow}</p>}
-          {p.heading && <h2>{p.heading}</h2>}
-          <span className="ornament left" aria-hidden />
-          {p.intro && <p>{p.intro}</p>}
-          {(p.helpTitle || p.helpText) && <FaqHelp title={p.helpTitle} text={p.helpText} href={p.helpHref} />}
-        </aside>
+      <div className={`faq-layout ${hasAside ? '' : 'no-aside'}`}>
+        {hasAside && (
+          <aside className="faq-aside">
+            {p.eyebrow && <p className="eyebrow">{p.eyebrow}</p>}
+            {p.heading && <h2>{p.heading}</h2>}
+            {(p.eyebrow || p.heading) && <span className="ornament left" aria-hidden />}
+            {p.intro && <p>{p.intro}</p>}
+            {(p.helpTitle || p.helpText) && <FaqHelp title={p.helpTitle} text={p.helpText} href={p.helpHref} />}
+          </aside>
+        )}
         <div className="faq">
           {items.map((q, i) => (
             <details key={q.id} className="faq-item" open={i === 0}>

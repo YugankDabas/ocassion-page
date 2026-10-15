@@ -1,10 +1,10 @@
-import { MOTIFS, type SectionProps, type SectionType } from '../../../contracts';
+import { DEFAULT_DISCOUNT_FILTERS, MOTIFS, discountFilterLabel, type DiscountFilter, type SectionProps, type SectionType } from '../../../contracts';
 import { BrandPicker } from '../../../components/fields/BrandPicker';
 import { IconItemsEditor } from '../../../components/fields/IconItemsEditor';
 import { ImageField } from '../../../components/fields/ImageField';
 import { RichTextEditor } from '../../../components/fields/RichTextEditor';
 import { ListEditor } from '../../../components/fields/SortableList';
-import { Field, NumberInput, Select, TextArea, TextInput, Toggle } from '../../../components/ui';
+import { Button, Field, NumberInput, Select, TextArea, TextInput, Toggle } from '../../../components/ui';
 import { newId } from '../../../lib/ids';
 import { HrefInput } from './HrefInput';
 
@@ -189,7 +189,85 @@ export function BrandGridEditor({ props, onChange }: EditorProps<'brandGrid'>) {
         <Toggle label="Brand search box" checked={props.showSearch} onChange={(showSearch) => onChange({ showSearch })} />
         <Toggle label="Discount filter chips" checked={props.showDiscountFilter} onChange={(showDiscountFilter) => onChange({ showDiscountFilter })} />
       </div>
+      {props.showDiscountFilter && (
+        <DiscountFiltersEditor
+          filters={props.discountFilters}
+          hideEmpty={props.hideEmptyFilters}
+          onChange={(discountFilters) => onChange({ discountFilters })}
+          onHideEmpty={(hideEmptyFilters) => onChange({ hideEmptyFilters })}
+        />
+      )}
       <BrandPicker label="Brands" value={props.brands} onChange={(brands) => onChange({ brands })} />
+    </div>
+  );
+}
+
+/** Discounts no filter catches, or that two filters both catch (filters match: above "from", up to and including "to"). */
+function filterProblems(filters: DiscountFilter[]): string[] {
+  const sorted = [...filters].sort((a, b) => a.min - b.min);
+  const problems: string[] = [];
+  sorted.forEach((f, i) => {
+    const next = sorted[i + 1];
+    if (!next) return;
+    if (f.max === null || next.min < f.max) problems.push(`“${discountFilterLabel(f)}” and “${discountFilterLabel(next)}” overlap: some brands show under both.`);
+    else if (next.min > f.max) problems.push(`Discounts above ${f.max}% and up to ${next.min}% are in no filter.`);
+  });
+  return problems;
+}
+
+function DiscountFiltersEditor({
+  filters,
+  hideEmpty,
+  onChange,
+  onHideEmpty,
+}: {
+  filters: DiscountFilter[];
+  hideEmpty: boolean;
+  onChange: (filters: DiscountFilter[]) => void;
+  onHideEmpty: (hide: boolean) => void;
+}) {
+  const problems = filterProblems(filters);
+  const last = filters[filters.length - 1];
+  return (
+    <div className="stack">
+      <ListEditor
+        label="Discount filters (after “All”)"
+        max={8}
+        addLabel="Add filter"
+        items={filters}
+        onChange={onChange}
+        summary={(f) => discountFilterLabel(f)}
+        createItem={() => ({ id: newId('disc_'), label: '', min: last ? (last.max ?? last.min) : 0, max: null })}
+        renderItem={(f, update) => (
+          <div className="grid-3">
+            <NumberInput label="From (above) %" value={f.min} min={0} max={100} step={0.5} onChange={(v) => update({ min: Math.min(100, Math.max(0, v ?? 0)) })} />
+            <NumberInput
+              label="To (up to) %"
+              hint="Empty = no upper limit"
+              value={f.max}
+              min={0}
+              max={100}
+              step={0.5}
+              onChange={(v) => update({ max: v === null ? null : Math.min(100, Math.max(0, v)) })}
+            />
+            <TextInput label="Chip text" value={f.label} maxLength={30} placeholder={discountFilterLabel({ ...f, label: '' })} onChange={(label) => update({ label })} />
+          </div>
+        )}
+      />
+      <p className="field-hint" style={{ margin: 0 }}>
+        A brand shows under a filter when its discount is above “From” and up to “To”: 0–5, 5–10, 10–25, 25+ put every brand in exactly one filter.
+      </p>
+      {problems.map((p) => (
+        <div key={p} className="alert alert-warning">
+          {p}
+        </div>
+      ))}
+      <div className="row wrap" style={{ gap: 20 }}>
+        <Toggle label="Hide filters with no brands in this grid" checked={hideEmpty} onChange={onHideEmpty} />
+        <Button size="sm" variant="ghost" onClick={() => onChange(DEFAULT_DISCOUNT_FILTERS.map((f) => ({ ...f, id: newId('disc_') })))}>
+          Reset to default filters
+        </Button>
+      </div>
     </div>
   );
 }

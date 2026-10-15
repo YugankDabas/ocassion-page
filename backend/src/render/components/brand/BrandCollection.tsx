@@ -1,13 +1,6 @@
+import { discountFilterLabel, type DiscountFilter } from '../../../contracts';
 import { BrandCard } from './BrandCard';
 import type { BrandCardData, Labels } from './types';
-
-const BANDS = [
-  { id: 'all', label: 'All', min: -1, max: Infinity },
-  { id: '1-5', label: 'Up to 5%', min: 0.01, max: 5 },
-  { id: '6-10', label: '6% – 10%', min: 5.01, max: 10 },
-  { id: '11-25', label: '11% – 25%', min: 10.01, max: 25 },
-  { id: '26+', label: '26% & above', min: 25.01, max: Infinity },
-] as const;
 
 interface Props {
   brands: BrandCardData[];
@@ -15,6 +8,9 @@ interface Props {
   initialCount: number;
   showSearch: boolean;
   showDiscountFilter: boolean;
+  /** Discount filter chips after "All", as set in the panel. */
+  discountFilters: DiscountFilter[];
+  hideEmptyFilters: boolean;
   ctaLabel: string;
   labels: Labels;
   /** Unique per section; used for the search field's label. */
@@ -26,10 +22,12 @@ interface Props {
  * paging (grid) or a scroll-snap carousel. Every brand is in the markup (good
  * for SEO); the page script shows / hides cards as the visitor filters.
  */
-export function BrandCollection({ brands, layout, initialCount, showSearch, showDiscountFilter, ctaLabel, labels, id }: Props) {
+export function BrandCollection({ brands, layout, initialCount, showSearch, showDiscountFilter, discountFilters, hideEmptyFilters, ctaLabel, labels, id }: Props) {
   if (brands.length === 0) return null;
   const isCarousel = layout === 'carousel';
-  const bands = BANDS.filter((b) => b.id === 'all' || brands.some((x) => (x.discountPercent ?? 0) >= b.min && (x.discountPercent ?? 0) <= b.max));
+  // Same rule as the page script: above `min`, up to and including `max`.
+  const inFilter = (f: DiscountFilter, discount: number) => discount > f.min && (f.max === null || discount <= f.max);
+  const filters = discountFilters.filter((f) => !hideEmptyFilters || brands.some((b) => inFilter(f, b.discountPercent ?? 0)));
   const searchId = `brand-search-${id}`;
 
   return (
@@ -44,18 +42,14 @@ export function BrandCollection({ brands, layout, initialCount, showSearch, show
               <input id={searchId} type="search" placeholder={labels.brandSearchPlaceholder} autoComplete="off" />
             </div>
           )}
-          {showDiscountFilter && bands.length > 2 && (
+          {showDiscountFilter && filters.length > 0 && (
             <div className="chips" role="group" aria-label="Filter by discount">
-              {bands.map((b) => (
-                <button
-                  key={b.id}
-                  type="button"
-                  className="chip"
-                  aria-pressed={b.id === 'all'}
-                  data-min={b.id === 'all' ? undefined : b.min}
-                  data-max={Number.isFinite(b.max) ? b.max : undefined}
-                >
-                  {b.id === 'all' ? labels.filterAll || b.label : b.label}
+              <button type="button" className="chip" aria-pressed>
+                {labels.filterAll || 'All'}
+              </button>
+              {filters.map((f) => (
+                <button key={f.id} type="button" className="chip" aria-pressed={false} data-min={f.min} data-max={f.max ?? undefined}>
+                  {discountFilterLabel(f)}
                 </button>
               ))}
             </div>
@@ -93,9 +87,11 @@ export function BrandCollection({ brands, layout, initialCount, showSearch, show
           )}
         </>
       )}
-      <p className="brand-empty" role="status" hidden>
-        {labels.noResults}
-      </p>
+      {labels.noResults && (
+        <p className="brand-empty" role="status" hidden>
+          {labels.noResults}
+        </p>
+      )}
     </div>
   );
 }

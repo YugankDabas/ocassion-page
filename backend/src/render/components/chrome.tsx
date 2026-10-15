@@ -101,10 +101,12 @@ export function SiteFooter({ site, logos }: { site: SiteSettings; logos: ChromeL
               <span className="footer-promise-icon">
                 <ItemIcon item={p} size={20} />
               </span>
-              <span>
-                <strong>{p.title}</strong>
-                <small>{p.text}</small>
-              </span>
+              {(p.title || p.text) && (
+                <span>
+                  {p.title && <strong>{p.title}</strong>}
+                  {p.text && <small>{p.text}</small>}
+                </span>
+              )}
             </li>
           ))}
         </ul>

@@ -39,7 +39,7 @@ const occasion: OccasionRecord = {
   theme: THEME_PRESETS.festive,
 };
 
-function setup() {
+function setup(siteInput: Record<string, unknown> = {}) {
   const pages = new InMemoryPageRepository();
   const brands = new InMemoryBrandRepository([brand(), brand({ name: 'Croma', slug: 'croma' }), brand({ name: 'Old', slug: 'old', isActive: false })]);
   const registry = SectionRegistry.createDefault(new HtmlSanitizer());
@@ -47,7 +47,7 @@ function setup() {
   const publicationRows = new InMemoryPublicationRepository(pages);
   const brandRepo = brands as unknown as IBrandRepository;
   const service = new PageService(pages, fakeOccasions(occasion), noTemplates, brandRepo, registry, new TemplateFactory(), new AuditService(noAudit, silentLogger), urls);
-  const site = { get: async () => siteSettingsSchema.parse({}) };
+  const site = { get: async () => siteSettingsSchema.parse(siteInput) };
   const payloads = new PagePayloadService(fakeOccasions(occasion), brandRepo, site as never, registry);
   const publications = new PublicationService(service, pages, publicationRows, payloads, new PageRenderer(), { inline: async (html) => html }, urls, silentLogger, { requireHttpsImages: true });
   return { service, pages, brands, publications, hosted: (slug: string) => publicationRows.bySlug(slug) };
@@ -167,6 +167,62 @@ describe('PageService', () => {
     expect(html).toContain('<th>Brand</th>');
     expect(html).toContain("<img src='https://cdn.gyftr.com/a.png'");
     expect(html).not.toContain('Panel-only name');
+  });
+
+  it('leaves no empty pill, box or line behind when a label or field is cleared', async () => {
+    // Every label emptied, and a brand with no discount (the "Gift card" placeholder pill used to stay as a grey box).
+    const labels = Object.fromEntries(Object.keys(siteSettingsSchema.parse({}).labels).map((k) => [k, '']));
+    const c = setup({ labels });
+    c.brands.brands[0]!.discountPercent = null;
+    const page = await c.service.create(actor, { occasionId: occasion.id, title: 'Diwali', pageUrl: `${BASE}/diwali-gift-cards`, templateId: 'default' });
+    const content = structuredClone(page.draft);
+    for (const section of content.sections) {
+      if (section.type === 'hero') for (const t of section.props.trustItems) Object.assign(t, { title: '', text: '' });
+      if (section.type === 'features') for (const f of section.props.items) Object.assign(f, { title: '', emoji: '' });
+      if (section.type === 'faq') Object.assign(section.props, { eyebrow: '', heading: '', intro: '', helpTitle: '', helpText: '' });
+      if (section.type === 'intro') Object.assign(section.props, { eyebrow: '', heading: '', body: '' });
+    }
+    await c.service.saveDraft(actor, page.id, { expectedVersion: 1, content });
+    await c.publications.publish(actor, page.id, 2);
+    const html = c.hosted('diwali-gift-cards')!.html;
+    const body = html.slice(html.indexOf('</style>'));
+
+    expect(body).toContain('Amazon Pay'); // the page still renders its brands
+    expect(body).not.toContain('occ-brand-discount occ-muted');
+    // Any element left empty must be purely decorative (aria-hidden), never a visible box with nothing in it.
+    const empty = [...body.matchAll(/<(span|p|strong|small|h2|h3|li|div|header|aside)(\s[^>]*)?><\/\1>/g)]
+      .map((m) => m[0])
+      .filter((tag) => !/aria-hidden/.test(tag));
+    expect(empty).toEqual([]);
+    expect(body).not.toContain("class='occ-faq-aside'");
+    expect(body).not.toContain("class='occ-feature-icon'");
+    expect(body).not.toContain("data-section='intro'"); // an intro with nothing in it is left out
+    expect(body).toContain("data-section='faq'"); // the questions still show, full width
+  });
+
+  it('shows every discount filter set in the panel, with ranges that leave no gaps', async () => {
+    const page = await ctx.service.create(actor, { occasionId: occasion.id, title: 'Diwali', pageUrl: `${BASE}/diwali-gift-cards`, templateId: 'default' });
+    const chips = async () => {
+      const html = ctx.hosted('diwali-gift-cards')!.html;
+      return [...html.matchAll(/<button type='button' class='occ-chip'([^>]*)>([^<]*)<\/button>/g)].map((m) => `${m[2]}${/data-min/.test(m[1]!) ? ` [${/data-min='([^']*)'/.exec(m[1]!)![1]}, ${/data-max='([^']*)'/.exec(m[1]!)?.[1] ?? '∞'}]` : ''}`);
+    };
+
+    // Defaults: all four filters, even the ones no brand on this page falls into (both brands here are at 2%).
+    await ctx.publications.publish(actor, page.id, 1);
+    expect(await chips()).toEqual(['All', 'Up to 5% [0, 5]', '5% – 10% [5, 10]', '10% – 25% [10, 25]', 'Above 25% [25, ∞]']);
+
+    // Edited in the panel: own text, own ranges, and filters with no brands left out.
+    const content = structuredClone(page.draft);
+    const grid = content.sections.find((s) => s.type === 'brandGrid');
+    if (grid?.type !== 'brandGrid') throw new Error('no brand grid');
+    grid.props.discountFilters = [
+      { id: 'a', label: 'Small savings', min: 0, max: 3 },
+      { id: 'b', label: '', min: 3, max: null },
+    ];
+    grid.props.hideEmptyFilters = true;
+    await ctx.service.saveDraft(actor, page.id, { expectedVersion: 1, content });
+    await ctx.publications.publish(actor, page.id, 2);
+    expect(await chips()).toEqual(['All', 'Small savings [0, 3]']);
   });
 
   it('stores the top banner images and the published flag for gyftr.com', async () => {
