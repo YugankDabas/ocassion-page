@@ -58,7 +58,8 @@ export const siteSettingsSchema = z.object({
       priceFrom: label('From', 20),
       readMore: label('Read more', 30),
       readLess: label('Read less', 30),
-      cardBrandMark: label('GyFTR', 20),
+      /** Small text in the corner of every brand card; empty = none. */
+      cardBrandMark: label('', 20),
     })
     .default({}),
 });

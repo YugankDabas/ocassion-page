@@ -18,10 +18,31 @@ const anchorSchema = z
   .regex(/^[a-z0-9-]*$/, 'Lowercase letters, numbers and hyphens only')
   .default('');
 
+/** Space in px (as on a desktop screen); empty = the section's built-in spacing. */
+const spaceSchema = z.number().int().min(0).max(400).nullable().optional();
+
+/**
+ * Spacing of a section, set per section in the panel. Padding is the space inside the section
+ * (between its edge and its content); margin is the distance to the sections around it.
+ */
+export const sectionLayoutSchema = z.object({
+  paddingTop: spaceSchema,
+  paddingBottom: spaceSchema,
+  marginTop: spaceSchema,
+  marginBottom: spaceSchema,
+  /** Space between the section heading and its content (sections with a shared heading only). */
+  headingGap: spaceSchema,
+});
+export type SectionLayout = z.infer<typeof sectionLayoutSchema>;
+
 const envelope = {
   id: itemIdSchema,
   visible: z.boolean().default(true),
   anchor: anchorSchema,
+  /** Name in the panel's section list only (never shown on the page). Empty = the section's heading. */
+  name: z.string().trim().max(80).optional(),
+  /** Spacing; empty = the section's built-in spacing. */
+  layout: sectionLayoutSchema.optional(),
 };
 
 const toneSchema = z.enum(['primary', 'surface', 'accent', 'transparent']).default('surface');

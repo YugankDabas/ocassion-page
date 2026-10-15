@@ -340,7 +340,14 @@ export function TermsEditor({ props, onChange }: EditorProps<'terms'>) {
   return (
     <div className="stack">
       <TextInput label="Heading" value={props.heading} maxLength={160} onChange={(heading) => onChange({ heading })} />
-      <RichTextEditor label="Terms" hint="Use a numbered list for clauses." value={props.body} onChange={(body) => onChange({ body })} />
+      <RichTextEditor
+        label="Terms"
+        hint="Use a numbered list for clauses. Tables and images can be added from the toolbar."
+        value={props.body}
+        tables
+        images
+        onChange={(body) => onChange({ body })}
+      />
       <div className="row wrap" style={{ gap: 20 }}>
         <Toggle label="Collapsible" checked={props.collapsible} onChange={(collapsible) => onChange({ collapsible })} />
         {props.collapsible && <Toggle label="Open by default" checked={props.defaultOpen} onChange={(defaultOpen) => onChange({ defaultOpen })} />}

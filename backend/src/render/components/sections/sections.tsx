@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import type { PublicBrand, SectionOf, SectionType, SiteSettings } from '../../../contracts';
+import type { PublicBrand, SectionLayout, SectionOf, SectionType, SiteSettings } from '../../../contracts';
 import { safeHtml } from '../../html';
 import { BrandCollection } from '../brand/BrandCollection';
 import { BrandTabs } from '../brand/BrandTabs';
@@ -25,13 +25,36 @@ export interface RenderContext {
 
 export type SectionComponent<T extends SectionType> = (p: { section: SectionOf<T>; ctx: RenderContext }) => ReactNode;
 
+/** The spacing set for a section in the panel, as inline style; nothing when the built-in spacing is kept. */
+export function layoutStyle(layout: SectionLayout | undefined): CSSProperties | undefined {
+  if (!layout) return undefined;
+  const style: Record<string, string> = {};
+  if (layout.paddingTop != null) style.paddingTop = space(layout.paddingTop);
+  if (layout.paddingBottom != null) style.paddingBottom = space(layout.paddingBottom);
+  if (layout.marginTop != null) style.marginTop = space(layout.marginTop);
+  if (layout.marginBottom != null) style.marginBottom = space(layout.marginBottom);
+  if (layout.headingGap != null) style['--heading-gap'] = space(layout.headingGap);
+  return Object.keys(style).length ? (style as CSSProperties) : undefined;
+}
+
+/**
+ * A space set in the panel, in px as on a desktop screen. It shrinks on smaller screens the way the
+ * built-in spacing does (80px desktop, 40px phone = clamp(40px, 6vw, 80px)): full size from about
+ * 1330px wide, down to half on a phone.
+ */
+function space(px: number): string {
+  if (px === 0) return '0';
+  const round = (n: number) => Math.round(n * 100) / 100;
+  return `clamp(${round(px / 2)}px, ${round(px * 0.075)}vw, ${px}px)`;
+}
+
 function Shell({
   section,
   tone,
   children,
   className = '',
 }: {
-  section: { id: string; anchor: string; type: string };
+  section: { id: string; anchor: string; type: string; layout?: SectionLayout };
   tone?: string;
   children: ReactNode;
   className?: string;
@@ -42,6 +65,7 @@ function Shell({
       data-section={section.type}
       data-section-id={section.id}
       className={`section tone-${tone ?? 'transparent'} ${className}`}
+      style={layoutStyle(section.layout)}
     >
       <div className="container">{children}</div>
     </section>
@@ -151,7 +175,7 @@ export const HeroSection: SectionComponent<'hero'> = ({ section, ctx }) => {
   };
 
   return (
-    <section id={section.anchor || undefined} data-section="hero" data-section-id={section.id} className="section-hero">
+    <section id={section.anchor || undefined} data-section="hero" data-section-id={section.id} className="section-hero" style={layoutStyle(section.layout)}>
       {slides.length === 1 ? (
         renderSlide(slides[0]!, 0)
       ) : (

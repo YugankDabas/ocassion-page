@@ -3,6 +3,7 @@ import { NavLink, Navigate, Outlet, useLocation } from 'react-router';
 import logoWhite from '../assets/gyftr-logo-white.png';
 import type { Permission } from '../contracts';
 import { useAuth } from '../lib/auth';
+import { useBrandSync } from '../lib/queries';
 import { Spinner } from './ui';
 
 const NAV: { to: string; label: string; icon: string; permission?: Permission; section?: string }[] = [
@@ -58,6 +59,7 @@ export function ProtectedLayout() {
         </div>
       </aside>
       <main className={`main ${fullscreen ? 'flush' : ''}`}>
+        <BrandSyncWatcher />
         <Outlet />
       </main>
     </div>
@@ -68,4 +70,10 @@ export function RequirePermission({ permission, children }: { permission: Permis
   const { can } = useAuth();
   if (!can(permission)) return <p className="muted">You do not have access to this page.</p>;
   return <>{children}</>;
+}
+
+/** Signing in fetches the brands from GyFTR in the background; brand lists refresh when that ends. */
+function BrandSyncWatcher() {
+  useBrandSync();
+  return null;
 }

@@ -116,7 +116,7 @@ small { font-size: inherit; }
 .tone-primary { background: var(--c-primary); color: var(--c-on-primary); }
 .tone-accent { background: var(--c-accent); color: #fff; }
 .tone-surface > .container { background: var(--c-surface); border-radius: calc(var(--radius) + 8px); padding-top: clamp(28px, 4vw, 48px); padding-bottom: clamp(28px, 4vw, 48px); box-shadow: var(--shadow-sm); }
-.section-heading { margin-bottom: clamp(24px, 3.5vw, 40px); }
+.section-heading { margin-bottom: var(--heading-gap, clamp(24px, 3.5vw, 40px)); }
 .section-heading.align-center { text-align: center; }
 .section-heading h2, .rich-text > h2, .intro h1, .intro h2, .cta h2, .faq-aside h2 { font-family: var(--font-heading); font-size: clamp(26px, 3.4vw, 40px); font-weight: 700; }
 .section-heading p { margin: 12px auto 0; color: var(--c-muted); max-width: 680px; font-size: 16.5px; }
@@ -149,8 +149,15 @@ small { font-size: inherit; }
 .tone-primary .prose a { color: var(--c-secondary); }
 .prose blockquote { margin: 16px 0; padding: 14px 18px; border-left: 4px solid var(--c-secondary); background: color-mix(in srgb, var(--c-secondary) 10%, transparent); border-radius: 0 12px 12px 0; }
 .prose table { border-collapse: collapse; width: 100%; margin: 0 0 16px; }
-.prose th, .prose td { border: 1px solid color-mix(in srgb, var(--c-text) 14%, transparent); padding: 10px 12px; text-align: left; }
+.prose th, .prose td { border: 1px solid color-mix(in srgb, var(--c-text) 14%, transparent); padding: 10px 12px; text-align: left; vertical-align: top; }
+.prose th { background: color-mix(in srgb, var(--c-text) 5%, transparent); font-weight: 600; }
+.prose th > p, .prose td > p { margin: 0; }
+.prose img { height: auto; border-radius: 10px; margin: 0 0 16px; }
 .prose > :last-child { margin-bottom: 0; }
+@media (max-width: 767px) {
+  /* A wide table scrolls sideways inside the text instead of widening the page. */
+  .prose table { display: block; overflow-x: auto; }
+}
 
 /* ==========================================================================
    Hero
@@ -359,7 +366,7 @@ small { font-size: inherit; }
    Rich text
    ========================================================================== */
 .rich-text { max-width: 940px; margin: 0 auto; }
-.rich-text > h2 { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+.rich-text > h2 { display: flex; align-items: center; gap: 14px; margin-bottom: var(--heading-gap, 22px); }
 .rich-text-mark { flex: none; width: 6px; height: 1.1em; border-radius: 3px; background: linear-gradient(180deg, var(--c-secondary), var(--c-accent)); }
 .collapsible-body { overflow: hidden; position: relative; transition: max-height 0.4s var(--ease); }
 .collapsible:not(.is-open) .collapsible-body::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 110px; background: linear-gradient(transparent, var(--c-surface)); }

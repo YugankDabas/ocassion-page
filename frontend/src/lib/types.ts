@@ -51,7 +51,22 @@ export interface Revision {
 
 export interface Brand extends PublicBrand {
   isActive: boolean;
+  /** The brand's id at GyFTR; null for a brand added by hand in the panel. */
+  gyftrId: number | null;
+  /** Fields changed by hand; the GyFTR sync leaves them alone. */
+  manualFields: string[];
+  /** Last time the brand's data came from GyFTR. */
+  syncedAt: string | null;
   updatedAt: string;
+}
+
+/** The brand sync from GyFTR (runs after each sign-in and on demand). */
+export interface BrandSyncStatus {
+  running: boolean;
+  startedAt: string | null;
+  finishedAt: string | null;
+  result: { listed: number; created: number; updated: number; unchanged: number; deactivated: number; detailsFailed: number } | null;
+  error: string | null;
 }
 
 export interface Media {

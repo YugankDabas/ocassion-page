@@ -33,13 +33,20 @@ diwali-gifts-admin/
 - **Occasion templates** – 37 occasions seeded with a URL, theme and illustration; a new page starts complete.
 - **Drag-and-drop builder** – hero banner, intro, highlights, brand grid, brand tabs, category tiles,
   image banners, rich text, FAQs, T&Cs, call-to-action. Every visible text, image, icon and colour is a field.
+  Each section's spacing can be set (padding, margin and the space under its heading, in desktop px; phones get
+  about half, like the built-in spacing), and it can be given its own name in the section list (by default its
+  heading). The T&Cs editor also inserts tables and images.
 - **Built-in artwork** – 19 occasion illustrations drawn in code; any slide can use an uploaded creative instead.
 - **Live preview** – rendered by the same renderer as the published HTML.
 - **Publish** – renders embeddable HTML: classes prefixed, styles scoped, fonts embedded, images on S3 / CDN.
   The page status and its HTML are stored in one transaction. A brand or site-settings change re-renders the
   published pages automatically (also at start-up); a page whose HTML comes out identical is not rewritten.
 - **Download** – the saved draft as one self-contained `.html` file: styles, script, fonts and images inside (for reviews and sign-off).
-- **Brand library** – logo, discount, voucher URL, category; CSV import. (A sync from GyFTR's brand API is planned.)
+- **Brand library** – synced from GyFTR's public brand API every time someone signs in to the panel (and with
+  "Sync from GyFTR"): the brand list (`/home/brand/list`) gives name, slug, logo and visibility; each brand's detail
+  (`/brand/detail/:slug`) gives its discount (`defaut_pg_dis`) and redemption. Everything can still be edited; the
+  panel asks for confirmation first, and a synced field changed by hand is no longer overwritten until
+  "Use GyFTR data again". Brands added by hand and CSV import still work.
 - **Media library** – uploads are re-encoded to WebP, stripped of metadata and resized. Stored in S3 when deployed.
 - **Workflow** – drafts vs published, optimistic locking, version history with restore, templates, audit log.
 - **Roles** – `ADMIN`, `PUBLISHER` (publish, brands, templates), `EDITOR` (drafts and media). Users are invite-only.

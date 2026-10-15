@@ -1,7 +1,7 @@
 import { SECTION_TYPES, type Section, type SectionType } from '../../contracts';
 import { SortableContainer, useSortableItem } from '../../components/fields/SortableList';
 import { Modal } from '../../components/ui';
-import { SECTION_CATALOG, sectionDefinition } from './sections/catalog';
+import { SECTION_CATALOG, sectionDefinition, sectionTitle } from './sections/catalog';
 
 interface Props {
   sections: Section[];
@@ -62,7 +62,9 @@ function SectionRow({
 }) {
   const s = useSortableItem(section.id);
   const def = sectionDefinition(section.type);
+  const title = sectionTitle(section);
   const summary = (def.summarize as (p: unknown) => string)(section.props);
+  const subtitle = title === def.label ? summary : [def.label, summary !== title ? summary : ''].filter(Boolean).join(' · ');
   return (
     <li
       ref={s.ref}
@@ -71,16 +73,16 @@ function SectionRow({
       onClick={onSelect}
       aria-current={selected || undefined}
     >
-      <button type="button" className="drag-handle" aria-label={`Drag to reorder ${def.label}`} {...s.handleProps} onClick={(e) => e.stopPropagation()}>
+      <button type="button" className="drag-handle" aria-label={`Drag to reorder ${title}`} {...s.handleProps} onClick={(e) => e.stopPropagation()}>
         ⠿
       </button>
       <span aria-hidden>{def.icon}</span>
       <span className="label">
         <strong>
-          {def.label} {invalid && <span title="Has errors" style={{ color: 'var(--danger)' }}>●</span>}{' '}
+          {title} {invalid && <span title="Has errors" style={{ color: 'var(--danger)' }}>●</span>}{' '}
           {!section.visible && <span className="badge badge-neutral">Hidden</span>}
         </strong>
-        <span>{summary || '—'}</span>
+        <span>{subtitle || '—'}</span>
       </span>
       <span className="row" style={{ gap: 0 }} onClick={(e) => e.stopPropagation()}>
         <button type="button" className="icon-btn" aria-label="Move up" title="Move up" disabled={!onMoveUp} onClick={onMoveUp}>

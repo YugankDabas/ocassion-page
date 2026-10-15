@@ -28,6 +28,7 @@ import {
 } from './repositories/prisma/PrismaRepositories';
 import { AuditService } from './services/AuditService';
 import { AuthService } from './services/AuthService';
+import { BrandSyncService } from './services/BrandSyncService';
 import { BrandService } from './services/BrandService';
 import { ContentChangeHub } from './services/ContentChanges';
 import { PagePayloadService } from './services/PagePayloadService';
@@ -92,15 +93,17 @@ export function createContainer(env: Env, logger: Logger, prisma = createPrismaC
     occasions: new OccasionService(repos.occasions, urls, audit),
     templates: new TemplateService(repos.templates, repos.pages, audit),
     brands: new BrandService(repos.brands, changes, audit, new URL(env.PAGE_PUBLIC_BASE_URL).origin),
+    brandSync: new BrandSyncService(repos.brands, changes, audit, logger, new URL(env.PAGE_PUBLIC_BASE_URL).origin),
     media: new MediaService(repos.media, storage, new SharpImageProcessor(), audit, logger),
     pages,
     publications,
   };
 
   const controllers = {
-    auth: new AuthController(services.auth, { secure: env.isProduction }),
+    // Every sign-in to the panel refreshes the brand library from GyFTR, in the background.
+    auth: new AuthController(services.auth, { secure: env.isProduction }, (actor) => void services.brandSync.start(actor)),
     pages: new PageController(services.pages, services.templates, urls.baseUrl, services.publications, env.ADMIN_FRONTEND_ORIGIN),
-    brands: new BrandController(services.brands),
+    brands: new BrandController(services.brands, services.brandSync),
     media: new MediaController(services.media),
     catalog: new CatalogController(services.occasions, services.templates, services.site, services.audit),
     users: new UserController(services.users),

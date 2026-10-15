@@ -196,8 +196,25 @@ export interface IPublicationRepository {
 /* ---------- Brands ---------- */
 export interface BrandRecord extends PublicBrand {
   isActive: boolean;
+  /** The brand's id at GyFTR (brand API); null for a brand added by hand in the panel. */
+  gyftrId: number | null;
+  /** Fields changed by hand in the panel; the GyFTR sync leaves them alone. */
+  manualFields: string[];
+  /** Last time the brand's data came from GyFTR. */
+  syncedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** Fields the GyFTR sync keeps up to date (unless changed by hand, see BrandRecord.manualFields). */
+export const SYNCED_BRAND_FIELDS = ['name', 'logoUrl', 'discountPercent', 'redemption', 'isActive'] as const;
+export type SyncedBrandField = (typeof SYNCED_BRAND_FIELDS)[number];
+export type SyncedBrandData = Pick<BrandInput, SyncedBrandField>;
+
+/** What one GyFTR sync writes. */
+export interface BrandSyncWrite {
+  creates: (BrandInput & { gyftrId: number })[];
+  updates: { id: string; data: Partial<SyncedBrandData> & { gyftrId?: number } }[];
 }
 
 export interface BrandQuery {
@@ -216,9 +233,15 @@ export interface IBrandRepository {
   firstActive(limit: number): Promise<BrandRecord[]>;
   categories(): Promise<string[]>;
   create(data: BrandInput): Promise<BrandRecord>;
-  update(id: string, data: BrandInput): Promise<BrandRecord>;
+  update(id: string, data: BrandInput & { manualFields?: string[] }): Promise<BrandRecord>;
   upsertBySlug(data: BrandInput): Promise<{ record: BrandRecord; created: boolean }>;
   delete(id: string): Promise<void>;
+  /** Every brand (for the GyFTR sync). */
+  all(): Promise<BrandRecord[]>;
+  /** Writes one GyFTR sync in a single transaction; changed brands get syncedAt = now. */
+  saveSync(write: BrandSyncWrite): Promise<void>;
+  /** Changes which fields count as changed by hand. */
+  setManualFields(id: string, fields: string[]): Promise<BrandRecord>;
 }
 
 /* ---------- Media ---------- */

@@ -13,16 +13,20 @@ export class HtmlSanitizer implements IHtmlSanitizer {
     allowedTags: [
       'p', 'br', 'hr', 'strong', 'b', 'em', 'i', 'u', 's', 'sub', 'sup', 'mark',
       'h2', 'h3', 'h4', 'ul', 'ol', 'li', 'blockquote', 'a', 'code',
-      'table', 'thead', 'tbody', 'tr', 'th', 'td',
+      'table', 'thead', 'tbody', 'tr', 'th', 'td', 'img',
     ],
     allowedAttributes: {
       a: ['href', 'target', 'rel'],
       th: ['colspan', 'rowspan'],
       td: ['colspan', 'rowspan'],
       ol: ['start'],
+      img: ['src', 'alt', 'width', 'height'],
     },
     allowedSchemes: ['http', 'https', 'mailto', 'tel'],
-    allowedSchemesAppliedToAttributes: ['href'],
+    allowedSchemesByTag: { img: ['https', 'http'] },
+    // An image needs a full address (https://…); anything else is dropped.
+    exclusiveFilter: (frame) => frame.tag === 'img' && !/^https?:\/\//i.test(frame.attribs.src ?? ''),
+    allowedSchemesAppliedToAttributes: ['href', 'src'],
     allowProtocolRelative: false,
     disallowedTagsMode: 'discard',
     enforceHtmlBoundary: true,

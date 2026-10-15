@@ -137,6 +137,38 @@ describe('PageService', () => {
     expect(ctx.hosted('diwali-gift-cards')).toBeNull();
   });
 
+  it('publishes section spacing and terms tables / images, still JSON-safe; a section name stays in the panel', async () => {
+    const page = await ctx.service.create(actor, { occasionId: occasion.id, title: 'Diwali', pageUrl: `${BASE}/diwali-gift-cards`, templateId: 'default' });
+    const content = structuredClone(page.draft);
+    content.sections = content.sections.filter((s) => s.type !== 'terms');
+    content.sections.push({
+      id: 'terms-x',
+      type: 'terms',
+      visible: true,
+      anchor: '',
+      name: 'Panel-only name',
+      layout: { paddingTop: 8, paddingBottom: 0, marginTop: null, marginBottom: 24, headingGap: 12 },
+      props: {
+        heading: 'More about "Diwali" Gift Cards',
+        body: '<table><tbody><tr><th>Brand</th><th>Validity</th></tr><tr><td><p>Amazon</p></td><td>1 year</td></tr></tbody></table><img src="https://cdn.gyftr.com/a.png" alt="A &quot;card&quot;"><img src="x.png">',
+        collapsible: false,
+        defaultOpen: true,
+      },
+    });
+    const saved = await ctx.service.saveDraft(actor, page.id, { expectedVersion: 1, content });
+    const terms = saved.draft.sections.find((s) => s.id === 'terms-x');
+    expect(terms?.type === 'terms' && terms.props.body).not.toContain('x.png'); // only full http(s) image addresses are kept
+
+    await ctx.publications.publish(actor, page.id, 2);
+    const html = ctx.hosted('diwali-gift-cards')!.html;
+    expect(JSON.stringify(html)).toBe(`"${html}"`);
+    // Desktop size from ~1330px wide, half on a phone (like the built-in spacing); 0 stays 0.
+    expect(html).toContain(" style='padding-top:clamp(4px, 0.6vw, 8px);padding-bottom:0;margin-bottom:clamp(12px, 1.8vw, 24px);--heading-gap:clamp(6px, 0.9vw, 12px)'>");
+    expect(html).toContain('<th>Brand</th>');
+    expect(html).toContain("<img src='https://cdn.gyftr.com/a.png'");
+    expect(html).not.toContain('Panel-only name');
+  });
+
   it('stores the top banner images and the published flag for gyftr.com', async () => {
     const page = await ctx.service.create(actor, { occasionId: occasion.id, title: 'Diwali', pageUrl: `${BASE}/diwali-gift-cards`, templateId: 'default' });
     await ctx.publications.publish(actor, page.id, 1);

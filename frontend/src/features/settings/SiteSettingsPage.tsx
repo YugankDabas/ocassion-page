@@ -49,7 +49,7 @@ const LABEL_FIELDS: [keyof SiteSettings['labels'], string][] = [
   ['priceFrom', 'Price prefix'],
   ['readMore', '“Read more”'],
   ['readLess', '“Read less”'],
-  ['cardBrandMark', 'Mark on gift cards'],
+  ['cardBrandMark', 'Small text on every brand card (empty = none)'],
 ];
 
 /** Header & footer shown around every occasion page (mirrors gyftr.com chrome). */

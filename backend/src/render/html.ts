@@ -8,10 +8,13 @@ const OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: [
     'p', 'br', 'hr', 'strong', 'b', 'em', 'i', 'u', 's', 'sub', 'sup', 'mark',
     'h2', 'h3', 'h4', 'ul', 'ol', 'li', 'blockquote', 'a', 'code',
-    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+    'table', 'thead', 'tbody', 'tr', 'th', 'td', 'img',
   ],
-  allowedAttributes: { a: ['href', 'target', 'rel'], th: ['colspan', 'rowspan'], td: ['colspan', 'rowspan'], ol: ['start'] },
+  allowedAttributes: { a: ['href', 'target', 'rel'], th: ['colspan', 'rowspan'], td: ['colspan', 'rowspan'], ol: ['start'], img: ['src', 'alt', 'width', 'height'] },
   allowedSchemes: ['http', 'https', 'mailto', 'tel'],
+  allowedSchemesByTag: { img: ['https', 'http'] },
+  exclusiveFilter: (frame) => frame.tag === 'img' && !/^https?:\/\//i.test(frame.attribs.src ?? ''),
+  allowedSchemesAppliedToAttributes: ['href', 'src'],
   allowProtocolRelative: false,
   transformTags: {
     a: (tagName, attribs) => ({

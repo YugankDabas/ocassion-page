@@ -1,10 +1,12 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 import type { BrandInput, CreatePageInput, OccasionInput, SiteSettings } from '../contracts';
 import { api } from './api';
 import type {
   AppConfig,
   AuditEntry,
   Brand,
+  BrandSyncStatus,
   Media,
   Occasion,
   PageDetail,
@@ -23,6 +25,7 @@ export const qk = {
   brands: (f?: object) => ['brands', f ?? {}] as const,
   brandsByIds: (ids: string[]) => ['brands', 'ids', ids] as const,
   categories: ['brands', 'categories'] as const,
+  brandSync: ['brand-sync'] as const,
   media: (f?: object) => ['media', f ?? {}] as const,
   occasions: ['occasions'] as const,
   templates: (occasionId?: string) => ['templates', occasionId ?? 'all'] as const,
@@ -131,6 +134,39 @@ export function useSaveBrand() {
   return useMutation({
     mutationFn: ({ id, input }: { id?: string; input: BrandInput }) =>
       (id ? api.put<{ brand: Brand }>(`/brands/${id}`, input) : api.post<{ brand: Brand }>('/brands', input)).then((r) => r.brand),
+    onSuccess: () => invalidate(['brands']),
+  });
+}
+
+/** Polls every 2 s while a sync is running; refreshes the brand lists when it ends. */
+export function useBrandSync() {
+  const client = useQueryClient();
+  const query = useQuery({
+    queryKey: qk.brandSync,
+    queryFn: () => api.get<BrandSyncStatus>('/brands/sync'),
+    refetchInterval: (q) => (q.state.data?.running ? 2000 : false),
+  });
+  const finishedAt = query.data?.finishedAt;
+  const seen = useRef(finishedAt);
+  useEffect(() => {
+    if (finishedAt && seen.current !== undefined && finishedAt !== seen.current) void client.invalidateQueries({ queryKey: ['brands'] });
+    seen.current = finishedAt;
+  }, [finishedAt, client]);
+  return query;
+}
+
+export function useStartBrandSync() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<BrandSyncStatus>('/brands/sync', {}),
+    onSuccess: (status) => client.setQueryData(qk.brandSync, status),
+  });
+}
+
+export function useResetBrandToGyftr() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (id: string) => api.post<{ brand: Brand }>(`/brands/${id}/reset-to-gyftr`, {}).then((r) => r.brand),
     onSuccess: () => invalidate(['brands']),
   });
 }

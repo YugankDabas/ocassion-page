@@ -35,6 +35,11 @@ describe('HtmlSanitizer', () => {
     expect(s.sanitize('<a href="javascript:alert(1)">x</a>')).toBe('<a>x</a>');
     expect(s.sanitize('<a href="//evil.com">x</a>')).toBe('<a>x</a>');
   });
+  it('keeps tables and images with a full https address (terms)', () => {
+    expect(s.sanitize('<table><tbody><tr><th colspan="2">A</th></tr><tr><td>1</td><td>2</td></tr></tbody></table>')).toBe('<table><tbody><tr><th colspan="2">A</th></tr><tr><td>1</td><td>2</td></tr></tbody></table>');
+    expect(s.sanitize('<img src="https://cdn.example/a.webp" alt="A" style="x" onload="y()">')).toBe('<img src="https://cdn.example/a.webp" alt="A" />');
+    expect(s.sanitize('<img src="javascript:alert(1)"><img src="data:image/png;base64,AA"><img src="/a.png">')).toBe('');
+  });
   it('keeps formatting and hardens external links', () => {
     expect(s.sanitize('<h1>T</h1><ul><li><strong>a</strong></li></ul>')).toBe('<h2>T</h2><ul><li><strong>a</strong></li></ul>');
     expect(s.sanitize('<a href="https://x.com" target="_blank">x</a>')).toBe('<a href="https://x.com" target="_blank" rel="noopener noreferrer">x</a>');

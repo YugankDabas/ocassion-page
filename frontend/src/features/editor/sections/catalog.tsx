@@ -112,6 +112,17 @@ export function sectionDefinition<T extends SectionType>(type: T): SectionDefini
   return SECTION_CATALOG[type] as SectionDefinition<T>;
 }
 
+/** The section's heading, if its type has one. */
+export function sectionHeading(section: Section): string {
+  const heading = (section.props as { heading?: unknown }).heading;
+  return typeof heading === 'string' ? heading.trim() : '';
+}
+
+/** What the panel calls a section: its own name, else its heading, else its type. */
+export function sectionTitle(section: Section): string {
+  return section.name?.trim() || sectionHeading(section) || sectionDefinition(section.type).label;
+}
+
 export function createSection(type: SectionType): Section {
   const def = SECTION_CATALOG[type];
   const props = defaultPropsFor(type) as Record<string, unknown>;

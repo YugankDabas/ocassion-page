@@ -1,20 +1,21 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useBlocker, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { pageContentSchema, type PageContent, type Section, type SectionType } from '../../contracts';
-import { Badge, Button, ConfirmDialog, EmptyState, Modal, Spinner, TextArea, TextInput, Toggle } from '../../components/ui';
+import { Badge, Button, ConfirmDialog, EmptyState, Modal, NumberInput, Spinner, TextArea, TextInput, Toggle } from '../../components/ui';
 import { API_BASE, ApiError, api, errorMessage } from '../../lib/api';
 import { IS_LOCAL } from '../../lib/environment';
 import { useAuth } from '../../lib/auth';
 import { newId } from '../../lib/ids';
 import { qk, useConfig, usePage, usePageAction } from '../../lib/queries';
 import type { PageDetail } from '../../lib/types';
+import { PANES, PaneDivider, PaneRail, openPaneCount, paneColumns, usePaneLayout } from './EditorPanes';
 import { PageSettingsPanel } from './PageSettingsPanel';
 import { PreviewPane } from './PreviewPane';
 import { RevisionsModal } from './RevisionsModal';
 import { AddSectionModal, SectionList } from './SectionList';
-import { createSection, sectionDefinition } from './sections/catalog';
+import { createSection, sectionDefinition, sectionHeading, sectionTitle } from './sections/catalog';
 
 interface Doc {
   title: string;
@@ -46,7 +47,8 @@ function Editor({ page, publicBaseUrl }: { page: PageDetail; publicBaseUrl: stri
   const [tab, setTab] = useState<'sections' | 'settings'>('sections');
   const [selectedId, setSelectedId] = useState<string | null>(page.draft.sections[0]?.id ?? null);
   const [adding, setAdding] = useState(false);
-  const [showPreview, setShowPreview] = useState(true);
+  const { layout: panes, update: updatePanes, toggle: togglePane } = usePaneLayout();
+  const editorBody = useRef<HTMLDivElement>(null);
   const [dialog, setDialog] = useState<null | 'download' | 'publish' | 'unpublish' | 'archive' | 'history' | 'template' | 'delete-section' | 'duplicate'>(null);
 
   const dirty = useMemo(() => JSON.stringify(doc) !== JSON.stringify(savedDoc), [doc, savedDoc]);
@@ -220,9 +222,20 @@ function Editor({ page, publicBaseUrl }: { page: PageDetail; publicBaseUrl: stri
             {doc.pageUrl} · v{version}
           </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => setShowPreview(!showPreview)}>
-          {showPreview ? 'Hide preview' : 'Show preview'}
-        </Button>
+        <div className="pane-toggles" role="group" aria-label="Panels">
+          {PANES.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              aria-pressed={!panes.collapsed[p.id]}
+              title={panes.collapsed[p.id] ? `Show ${p.label.toLowerCase()}` : `Collapse ${p.label.toLowerCase()}`}
+              disabled={!panes.collapsed[p.id] && openPaneCount(panes) === 1}
+              onClick={() => togglePane(p.id)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
         <MoreMenu
           items={[
             { label: 'Version history', onSelect: () => setDialog('history') },
@@ -250,7 +263,10 @@ function Editor({ page, publicBaseUrl }: { page: PageDetail; publicBaseUrl: stri
         )}
       </div>
 
-      <div className={`editor-body ${showPreview ? '' : 'no-preview'}`}>
+      <div ref={editorBody} className="editor-body" style={{ '--editor-cols': paneColumns(panes) } as React.CSSProperties}>
+        {panes.collapsed.left ? (
+          <PaneRail label={tab === 'sections' ? `Sections (${sections.length})` : 'Page settings'} side="left" onOpen={() => togglePane('left')} />
+        ) : (
         <aside className="editor-pane editor-left">
           <div className="tabs" role="tablist">
             <button className="tab" role="tab" aria-selected={tab === 'sections'} onClick={() => setTab('sections')}>
@@ -272,7 +288,17 @@ function Editor({ page, publicBaseUrl }: { page: PageDetail; publicBaseUrl: stri
             <p className="muted small">URL, SEO and theme settings are shown in the main panel →</p>
           )}
         </aside>
+        )}
 
+        <PaneDivider which="left" container={editorBody} layout={panes} update={updatePanes} toggle={togglePane} />
+
+        {panes.collapsed.center ? (
+          <PaneRail
+            label={tab === 'settings' ? 'Page settings' : selected ? sectionTitle(selected) : 'Editor'}
+            side="center"
+            onOpen={() => togglePane('center')}
+          />
+        ) : (
         <main className="editor-pane editor-center">
           {tab === 'settings' ? (
             <PageSettingsPanel
@@ -298,10 +324,19 @@ function Editor({ page, publicBaseUrl }: { page: PageDetail; publicBaseUrl: stri
             </EmptyState>
           )}
         </main>
+        )}
 
-        {showPreview && (
+        <PaneDivider which="right" container={editorBody} layout={panes} update={updatePanes} toggle={togglePane} />
+
+        {panes.collapsed.right ? (
+          <PaneRail label="Live preview" side="right" onOpen={() => togglePane('right')} />
+        ) : (
           <aside className="editor-pane editor-right">
-            <PreviewPane pageId={page.id} content={previewContent} focusSectionId={tab === 'sections' ? selectedId : null} />
+            <PreviewPane
+              pageId={page.id}
+              content={previewContent}
+              focusSectionId={tab === 'sections' ? selectedId : null}
+            />
           </aside>
         )}
       </div>
@@ -343,7 +378,7 @@ function Editor({ page, publicBaseUrl }: { page: PageDetail; publicBaseUrl: stri
         title="Delete section?"
         danger
         confirmLabel="Delete"
-        message={<p>Delete the “{selected ? sectionDefinition(selected.type).label : ''}” section? You can undo by restoring a previous version from History.</p>}
+        message={<p>Delete the “{selected ? sectionTitle(selected) : ''}” section? You can undo by restoring a previous version from History.</p>}
         onClose={() => setDialog(null)}
         onConfirm={() => {
           if (selected) {
@@ -454,11 +489,28 @@ function SectionEditorPanel({
 }) {
   const def = sectionDefinition(section.type);
   const Editor = def.Editor as unknown as React.ComponentType<{ props: unknown; onChange: (patch: object) => void }>;
+  const layout = section.layout ?? {};
+  const defaults = defaultSpacing(section.type);
+  const setSpace = (key: SpaceKey, value: number | null) =>
+    onPatch({ layout: { ...layout, [key]: value === null ? null : Math.max(0, Math.min(400, Math.round(value))) } });
+  const preset = (padding: number, headingGap: number) =>
+    onPatch({
+      layout: {
+        ...layout,
+        paddingTop: Math.min(padding, defaults.paddingTop),
+        paddingBottom: Math.min(padding, defaults.paddingBottom),
+        ...(defaults.headingGap != null ? { headingGap } : {}),
+      },
+    });
+  const spaceInput = (key: SpaceKey, label: string) => (
+    <SpaceInput label={label} value={layout[key] ?? null} fallback={defaults[key] ?? 0} onChange={(v) => setSpace(key, v)} />
+  );
   return (
     <div className="stack">
       <div className="row-between">
         <h2>
-          {def.icon} {def.label}
+          {def.icon} {sectionTitle(section)}
+          {sectionTitle(section) !== def.label && <span className="muted small"> · {def.label}</span>}
         </h2>
         <div className="row">
           <Button size="sm" variant="ghost" onClick={onDuplicate}>
@@ -469,12 +521,19 @@ function SectionEditorPanel({
           </Button>
         </div>
       </div>
-      <div className="card card-body">
+      <Collapsible id="content" title="Content" defaultOpen>
         <Editor key={section.id} props={section.props} onChange={(patch) => onPatch({ props: { ...section.props, ...patch } } as Partial<Section>)} />
-      </div>
-      <fieldset className="group stack">
-        <legend>Section options</legend>
+      </Collapsible>
+      <Collapsible id="options" title="Section options">
         <Toggle label="Visible on page" checked={section.visible} onChange={(visible) => onPatch({ visible })} />
+        <TextInput
+          label="Name in the section list"
+          value={section.name ?? ''}
+          maxLength={80}
+          placeholder={sectionHeading(section) || def.label}
+          hint="Only for the panel. Empty: the section's heading is used."
+          onChange={(name) => onPatch({ name })}
+        />
         <TextInput
           label="Anchor id"
           value={section.anchor}
@@ -483,7 +542,114 @@ function SectionEditorPanel({
           hint={section.anchor ? `Link to this section with #${section.anchor}` : 'Optional. Lets buttons and links jump to this section.'}
           onChange={(anchor) => onPatch({ anchor: anchor.toLowerCase().replace(/[^a-z0-9-]/g, '-') })}
         />
-      </fieldset>
+      </Collapsible>
+      <Collapsible id="spacing" title="Spacing">
+        <p className="field-hint" style={{ margin: 0 }}>
+          In pixels, as on a desktop screen; phones get about half, like the built-in spacing. An empty box keeps the default shown in it. The gap between
+          two sections is this section's <strong>padding bottom</strong> plus the next section's <strong>padding top</strong>: lower both to bring them closer.
+        </p>
+        <div className="row wrap">
+          <Button size="sm" onClick={() => preset(24, 16)}>
+            Compact
+          </Button>
+          <Button size="sm" onClick={() => preset(0, 12)}>
+            No space
+          </Button>
+          {Object.values(layout).some((v) => v != null) && (
+            <Button size="sm" variant="ghost" onClick={() => onPatch({ layout: undefined })}>
+              Reset spacing to default
+            </Button>
+          )}
+        </div>
+        <div className="grid-2">
+          {spaceInput('paddingTop', 'Padding top')}
+          {spaceInput('paddingBottom', 'Padding bottom')}
+          {spaceInput('marginTop', 'Margin top')}
+          {spaceInput('marginBottom', 'Margin bottom')}
+          {defaults.headingGap != null && spaceInput('headingGap', 'Space under heading')}
+        </div>
+      </Collapsible>
+    </div>
+  );
+}
+
+/** A part of the section panel that folds open and closed; stays as the editor left it (per browser). */
+function Collapsible({ id, title, defaultOpen = false, children }: { id: string; title: string; defaultOpen?: boolean; children: ReactNode }) {
+  const key = `section-panel:${id}`;
+  const [open, setOpen] = useState(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      return saved === null ? defaultOpen : saved === '1';
+    } catch {
+      return defaultOpen;
+    }
+  });
+  const toggle = () => {
+    setOpen(!open);
+    try {
+      localStorage.setItem(key, open ? '0' : '1');
+    } catch {
+      /* storage unavailable: still toggles */
+    }
+  };
+  return (
+    <section className={`panel-part ${open ? 'open' : ''}`}>
+      <button type="button" className="panel-part-head" aria-expanded={open} onClick={toggle}>
+        <span>{title}</span>
+        <span aria-hidden className="panel-part-chevron">
+          ▾
+        </span>
+      </button>
+      {open && <div className="panel-part-body stack">{children}</div>}
+    </section>
+  );
+}
+
+type SpaceKey = keyof NonNullable<Section['layout']>;
+
+/** The built-in spacing of each section type (desktop px), shown in the empty boxes. Matches page.css. */
+function defaultSpacing(type: Section['type']): Record<Exclude<SpaceKey, 'headingGap'>, number> & { headingGap?: number } {
+  const padding = type === 'hero' ? 0 : 80;
+  const headingGap = ['features', 'brandGrid', 'brandTabs', 'categories', 'imageBanners'].includes(type) ? 40 : type === 'richText' ? 22 : undefined;
+  return { paddingTop: type === 'terms' ? 0 : padding, paddingBottom: padding, marginTop: 0, marginBottom: 0, headingGap };
+}
+
+/**
+ * A space in px with − / + buttons. Empty means "the default", which is shown in the box; stepping
+ * from empty starts at the default, so − always makes the space smaller than what is on the page.
+ */
+function SpaceInput({ label, value, fallback, onChange }: { label: string; value: number | null; fallback: number; onChange: (v: number | null) => void }) {
+  const id = useId();
+  const step = (delta: number) => onChange(Math.max(0, Math.min(400, (value ?? fallback) + delta)));
+  return (
+    <div className="field">
+      <label className="field-label" htmlFor={id}>
+        {label}
+      </label>
+      <div className="space-input">
+        <button type="button" aria-label={`Less ${label.toLowerCase()}`} onClick={() => step(-8)} disabled={(value ?? fallback) <= 0}>
+          −
+        </button>
+        <input
+          id={id}
+          className="input"
+          type="number"
+          min={0}
+          max={400}
+          value={value ?? ''}
+          placeholder={`${fallback} (default)`}
+          onKeyDown={(e) => {
+            if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+            e.preventDefault();
+            step(e.key === 'ArrowUp' ? 4 : -4);
+          }}
+          onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+        />
+        <span className="muted small">px</span>
+        <button type="button" aria-label={`More ${label.toLowerCase()}`} onClick={() => step(8)} disabled={(value ?? fallback) >= 400}>
+          +
+        </button>
+      </div>
     </div>
   );
 }

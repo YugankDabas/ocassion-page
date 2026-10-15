@@ -119,7 +119,7 @@ describe.skipIf(!url)('database: schema at start-up and the tech team\'s read-on
   const html = async () => (await asTech(PAGE_HTML, 'diwali'))[0];
 
   it('creates the schema once, and recovers from an earlier failed attempt', async () => {
-    expect(migrationResults).toEqual(['Applied 20261011120000_init, 20261012120000_user_must_change_password, 20261014120000_publication_banners_and_status', 'No pending migrations']);
+    expect(migrationResults).toEqual(['Applied 20261011120000_init, 20261012120000_user_must_change_password, 20261014120000_publication_banners_and_status, 20261015120000_brand_sync, 20261015130000_no_card_mark', 'No pending migrations']);
     const history = await db.$queryRawUnsafe<{ migration_name: string; applied: boolean; rolled_back: boolean }[]>(
       'SELECT migration_name, finished_at IS NOT NULL AS applied, rolled_back_at IS NOT NULL AS rolled_back FROM "_prisma_migrations" ORDER BY started_at, migration_name',
     );
@@ -128,6 +128,8 @@ describe.skipIf(!url)('database: schema at start-up and the tech team\'s read-on
       { migration_name: '20261011120000_init', applied: true, rolled_back: false },
       { migration_name: '20261012120000_user_must_change_password', applied: true, rolled_back: false },
       { migration_name: '20261014120000_publication_banners_and_status', applied: true, rolled_back: false },
+      { migration_name: '20261015120000_brand_sync', applied: true, rolled_back: false },
+      { migration_name: '20261015130000_no_card_mark', applied: true, rolled_back: false },
     ]);
     const tables = await db.$queryRawUnsafe<{ count: number }[]>(`SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema = 'public' AND table_name <> '_prisma_migrations'`);
     expect(tables[0]!.count).toBe(10);

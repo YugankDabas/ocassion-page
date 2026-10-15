@@ -1,7 +1,7 @@
 import { parse } from 'csv-parse/sync';
-import { brandInputSchema, type BrandInput } from '../contracts';
+import { brandInputSchema, slugSchema, type BrandInput } from '../contracts';
 import { ConflictError, NotFoundError, ValidationError } from '../lib/errors';
-import type { BrandQuery, IBrandRepository } from '../repositories/types';
+import { SYNCED_BRAND_FIELDS, type BrandQuery, type BrandRecord, type IBrandRepository } from '../repositories/types';
 import type { Actor, AuditService } from './AuditService';
 import type { IContentChangeNotifier } from './ContentChanges';
 
@@ -50,17 +50,27 @@ export class BrandService {
     return brand;
   }
 
+  /**
+   * For a brand that comes from GyFTR: its slug stays GyFTR's (the sync looks the brand up by it),
+   * and every synced field changed here is remembered, so the sync no longer overwrites it.
+   */
   async update(actor: Actor, id: string, input: BrandInput) {
-    await this.get(id);
-    const clash = await this.brands.findBySlug(input.slug);
-    if (clash && clash.id !== id) throw new ConflictError(`Brand slug "${input.slug}" already exists`);
-    const brand = await this.brands.update(id, this.withDefaults(input));
-    await this.afterChange(actor, 'brand.update', id, { slug: brand.slug });
+    const before = await this.get(id);
+    if (before.gyftrId === null && !slugSchema.safeParse(input.slug).success) throw new ValidationError('Slug: lowercase letters, numbers and hyphens only');
+    const data = before.gyftrId === null ? input : { ...input, slug: before.slug };
+    const clash = await this.brands.findBySlug(data.slug);
+    if (clash && clash.id !== id) throw new ConflictError(`Brand slug "${data.slug}" already exists`);
+    const manualFields = before.gyftrId === null ? before.manualFields : [...new Set([...before.manualFields, ...changedSyncedFields(before, data)])];
+    const brand = await this.brands.update(id, { ...this.withDefaults(data), manualFields });
+    await this.afterChange(actor, 'brand.update', id, { slug: brand.slug, ...(manualFields.length ? { manualFields } : {}) });
     return brand;
   }
 
   async delete(actor: Actor, id: string) {
     const brand = await this.get(id);
+    if (brand.gyftrId !== null) {
+      throw new ConflictError('This brand comes from GyFTR and would be added again by the next sync. Edit it and switch it to inactive instead.');
+    }
     await this.brands.delete(id);
     await this.afterChange(actor, 'brand.delete', id, { slug: brand.slug });
   }
@@ -98,6 +108,14 @@ export class BrandService {
         result.errors.push({ row: index + 2, message: `${issue?.path.join('.')}: ${issue?.message}` });
         continue;
       }
+      const existing = await this.brands.findBySlug(parsed.data.slug);
+      if (existing && existing.gyftrId !== null) {
+        // A GyFTR brand: the fields the CSV changes count as edited by hand, as in the edit form.
+        const manualFields = [...new Set([...existing.manualFields, ...changedSyncedFields(existing, parsed.data)])];
+        await this.brands.update(existing.id, { ...this.withDefaults(parsed.data), manualFields });
+        result.updated++;
+        continue;
+      }
       const { created } = await this.brands.upsertBySlug(this.withDefaults(parsed.data));
       if (created) result.created++;
       else result.updated++;
@@ -106,7 +124,7 @@ export class BrandService {
     return result;
   }
 
-  private withDefaults(input: BrandInput): BrandInput {
+  private withDefaults<T extends BrandInput>(input: T): T {
     return { ...input, productUrl: input.productUrl || `${this.productUrlBase}/${input.slug}` };
   }
 
@@ -114,4 +132,9 @@ export class BrandService {
     this.changes.changed('brands'); // published pages are re-rendered with the new brand data
     await this.audit.record(actor, { action, entityType: 'brand', entityId, metadata });
   }
+}
+
+/** The GyFTR-synced fields an editor changed. */
+function changedSyncedFields(before: BrandRecord, after: BrandInput): string[] {
+  return SYNCED_BRAND_FIELDS.filter((field) => before[field] !== after[field]);
 }

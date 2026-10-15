@@ -146,7 +146,7 @@ Images are **not** stored in the database. They are in S3; the database holds th
 | `PageRevision` | History, for restore | `pageId`, `version`, `kind` (SAVE / PUBLISH / RESTORE), `content`, `note` |
 | `PagePublication` | **The HTML gyftr.com reads** | `slug` (primary key), `source`, `pageId` (unique), `version`, `html`, `seo` (JSON), `publishedAt`, `renderedAt` |
 | `Template` | Saved page layouts | `name`, `occasionId`, `content` |
-| `Brand` | Brand cards shown on pages | `name`, `slug`, `logoUrl`, `productUrl`, `discountPercent`, `discountLabel`, `category`, `redemption`, `minDenomination`, `isActive` |
+| `Brand` | Brand cards shown on pages | `name`, `slug`, `logoUrl`, `productUrl`, `discountPercent`, `discountLabel`, `category`, `redemption`, `minDenomination`, `isActive`; `gyftrId` (GyFTR's brand id, empty for a brand added by hand), `manualFields` (fields changed by hand, which the sync leaves alone), `syncedAt` |
 | `Media` | A record per uploaded image (the file is in S3) | `storageKey` (S3 key), `url`, `mimeType`, `width`, `height`, `sizeBytes`, `originalName`, `alt` |
 | `SiteSetting` | Header / footer links used in preview and download | one row: `key = 'site'`, `value` JSON |
 | `AuditLog` | Who did what | `actorId`, `action`, `entityType`, `entityId`, `metadata`, `ip` |
@@ -274,7 +274,8 @@ All database access is in `src/repositories/`. No other file runs a query.
 | `src/services/PageService.ts` | Create page, save draft, version check, revisions, URL rules. |
 | `src/services/PagePayloadService.ts` | Collects what a render needs: page content, its brands, site settings. |
 | `src/services/ContentChanges.ts` | The "a brand / setting changed" signal that triggers re-rendering. |
-| `src/services/BrandService.ts` | Brands: create, update, delete, CSV import. |
+| `src/services/BrandService.ts` | Brands: create, update, delete, CSV import. Remembers which GyFTR fields were changed by hand. |
+| `src/services/BrandSyncService.ts` | Brand sync from GyFTR's public API, run in the background after each sign-in and on demand. |
 | `src/services/MediaService.ts` | Image upload: re-encode to WebP, store in S3, save the record. |
 | `src/services/CatalogServices.ts` | Occasions, templates, site settings. |
 | `src/services/AuthService.ts`, `UserService.ts`, `security.ts` | Login, sessions (JWT), password hashing, users. |
@@ -450,6 +451,11 @@ Roles: `ADMIN` (everything, including users), `PUBLISHER` (publish, brands, temp
 - **Will it load the database?** One primary-key lookup per request, and the gyftr.com backend caches.
 - **Why store HTML instead of rendering per request?** Reading becomes one row fetch; rendering happens once, at publish.
 - **What if a discount changes?** Published pages re-render automatically; `updated_at` changes, `version` does not.
+- **Where do brands come from?** GyFTR's public brand API, fetched every time someone signs in to the panel
+  (list: `https://api.gyftr.com/gyftrapi/api/v1/home/brand/list`; discount `defaut_pg_dis` and redemption from
+  `.../brand/detail/:slug`). Brands are matched on GyFTR's id. A brand GyFTR no longer lists is set inactive,
+  never deleted. If the API cannot be reached, nothing changes and the Brands page shows the error. The API
+  service needs outbound HTTPS to `api.gyftr.com`.
 - **What if publishing fails half way?** It cannot: page status, history and HTML are written in one transaction.
 - **Can an unpublished page still be served?** No. The row is deleted in the same transaction as the status
   change, and a re-render never creates a row.
@@ -464,5 +470,5 @@ then login, publish, read from the view, unpublish.
 Not verified here: a real AWS Secrets Manager secret, a real S3 upload, the image DevOps builds, the panel
 screens in a browser test, and how gyftr.com's frontend runs the page script on client-side navigation.
 
-Not built yet: syncing brands from GyFTR's brands API (waiting for its specification). Brands are entered
-in the panel or imported by CSV.
+Brand sync: unit tests with a stand-in API, and a live run against GyFTR's API locally (490 brands listed;
+one slug, `black-+-decker`, is rejected by GyFTR's own detail endpoint and keeps its list data without a discount).

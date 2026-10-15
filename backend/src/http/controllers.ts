@@ -19,9 +19,10 @@ import {
 } from '../contracts';
 import { randomToken } from '../lib/crypto';
 import { BadRequestError, NotFoundError } from '../lib/errors';
-import type { AuditService } from '../services/AuditService';
+import type { Actor, AuditService } from '../services/AuditService';
 import type { AuthService } from '../services/AuthService';
 import type { BrandService } from '../services/BrandService';
+import type { BrandSyncService } from '../services/BrandSyncService';
 import type { OccasionService, SiteSettingsService, TemplateService } from '../services/CatalogServices';
 import type { MediaService } from '../services/MediaService';
 import type { PageService } from '../services/PageService';
@@ -44,6 +45,8 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly cookies: CookieOptions,
+    /** Runs after every successful sign-in, without delaying it (the panel refreshes brands from GyFTR). */
+    private readonly onLogin: (actor: Actor) => void = () => {},
   ) {}
 
   login = async (req: Request, res: Response) => {
@@ -55,6 +58,7 @@ export class AuthController {
     res.cookie(SESSION_COOKIE, token, { ...base, httpOnly: true });
     res.cookie(CSRF_COOKIE, csrfToken, { ...base, httpOnly: true });
     res.json({ user, csrfToken });
+    this.onLogin({ id: user.id, ip: req.ip ?? null });
   };
 
   /** Returns the session user plus the CSRF token for the SPA to echo back. */
@@ -241,8 +245,30 @@ export class PageController {
   };
 }
 
+/** For a brand from GyFTR the slug is GyFTR's (it may contain characters a hand-made slug may not); the service checks it. */
+const brandUpdateSchema = brandInputSchema.extend({ slug: z.string().trim().min(1).max(120) });
+
 export class BrandController {
-  constructor(private readonly brands: BrandService) {}
+  constructor(
+    private readonly brands: BrandService,
+    private readonly sync: BrandSyncService,
+  ) {}
+
+  /** Last sync from GyFTR: when, what changed, or why it failed. */
+  syncStatus = async (_req: Request, res: Response) => {
+    res.json(this.sync.getStatus());
+  };
+
+  /** Starts a sync from GyFTR in the background (joins one that is already running). */
+  startSync = async (req: Request, res: Response) => {
+    void this.sync.start(actorOf(req));
+    res.status(202).json(this.sync.getStatus());
+  };
+
+  /** Drops a brand's hand-made changes and takes its data from GyFTR again. */
+  resetToGyftr = async (req: Request, res: Response) => {
+    res.json({ brand: await this.sync.resetToGyftr(actorOf(req), parse(idParam, req.params).id) });
+  };
 
   list = async (req: Request, res: Response) => {
     const q = parse(
@@ -275,7 +301,7 @@ export class BrandController {
 
   update = async (req: Request, res: Response) => {
     const { id } = parse(idParam, req.params);
-    res.json({ brand: await this.brands.update(actorOf(req), id, parse(brandInputSchema, req.body)) });
+    res.json({ brand: await this.brands.update(actorOf(req), id, parse(brandUpdateSchema, req.body)) });
   };
 
   remove = async (req: Request, res: Response) => {

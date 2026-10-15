@@ -54,6 +54,9 @@ export function adminRouter(c: Container): Router {
   r.get('/brands', allow('pages.read'), brands.list);
   r.get('/brands/categories', allow('pages.read'), brands.categories);
   r.post('/brands/import', allow('brands.write'), csvUpload(), brands.importCsv);
+  r.get('/brands/sync', allow('pages.read'), brands.syncStatus);
+  r.post('/brands/sync', allow('brands.write'), brands.startSync);
+  r.post('/brands/:id/reset-to-gyftr', allow('brands.write'), brands.resetToGyftr);
   r.post('/brands', allow('brands.write'), brands.create);
   r.get('/brands/:id', allow('pages.read'), brands.get);
   r.put('/brands/:id', allow('brands.write'), brands.update);

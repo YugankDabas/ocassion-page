@@ -1,6 +1,6 @@
 import type { Brand, Prisma, PrismaClient } from '@prisma/client';
 import type { BrandInput } from '../../contracts';
-import type { BrandQuery, BrandRecord, IBrandRepository, Paginated } from '../types';
+import type { BrandQuery, BrandRecord, BrandSyncWrite, IBrandRepository, Paginated } from '../types';
 
 function toRecord(b: Brand): BrandRecord {
   return {
@@ -15,6 +15,9 @@ function toRecord(b: Brand): BrandRecord {
     redemption: b.redemption,
     minDenomination: b.minDenomination,
     isActive: b.isActive,
+    gyftrId: b.gyftrId,
+    manualFields: b.manualFields,
+    syncedAt: b.syncedAt,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   };
@@ -80,7 +83,7 @@ export class PrismaBrandRepository implements IBrandRepository {
     return toRecord(await this.db.brand.create({ data }));
   }
 
-  async update(id: string, data: BrandInput): Promise<BrandRecord> {
+  async update(id: string, data: BrandInput & { manualFields?: string[] }): Promise<BrandRecord> {
     return toRecord(await this.db.brand.update({ where: { id }, data }));
   }
 
@@ -94,5 +97,22 @@ export class PrismaBrandRepository implements IBrandRepository {
 
   async delete(id: string): Promise<void> {
     await this.db.brand.delete({ where: { id } });
+  }
+
+  async all(): Promise<BrandRecord[]> {
+    return (await this.db.brand.findMany({ orderBy: { name: 'asc' } })).map(toRecord);
+  }
+
+  async saveSync({ creates, updates }: BrandSyncWrite): Promise<void> {
+    const syncedAt = new Date();
+    const writes = [
+      ...(creates.length ? [this.db.brand.createMany({ data: creates.map((c) => ({ ...c, syncedAt })) })] : []),
+      ...updates.map((u) => this.db.brand.update({ where: { id: u.id }, data: { ...u.data, syncedAt } })),
+    ];
+    if (writes.length) await this.db.$transaction(writes);
+  }
+
+  async setManualFields(id: string, fields: string[]): Promise<BrandRecord> {
+    return toRecord(await this.db.brand.update({ where: { id }, data: { manualFields: fields } }));
   }
 }
