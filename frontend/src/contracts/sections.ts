@@ -124,35 +124,48 @@ export const brandRefSchema = z.object({
   href: hrefSchema.default(''),
 });
 /**
- * A discount filter chip above a brand grid. A brand matches when its discount is above `min` and up to
- * (and including) `max`; an empty `max` means no upper limit. Consecutive ranges therefore leave no gaps:
- * 0–5, 5–10, 10–25, 25+ put every discount in exactly one filter.
+ * A filter chip above a brand grid: a discount range or a brand category.
+ *   - discount: a brand matches when its discount is above `min` and up to (and including) `max`; an empty
+ *     `max` means no upper limit. Consecutive ranges leave no gaps: 0–5, 5–10, 10–25, 25+ put every
+ *     discount in exactly one filter.
+ *   - category: a brand matches when its category (set on the Brands page) is `category`, ignoring case.
  */
-export const discountFilterSchema = z
+export const brandFilterSchema = z
   .object({
     id: itemIdSchema,
-    /** Chip text; empty = written from the range ("Up to 5%", "5% – 10%", "Above 25%"). */
+    kind: z.enum(['discount', 'category']).default('discount'),
+    /** Chip text; empty = written from the range ("Up to 5%", "5% – 10%", "Above 25%") or the category. */
     label: text(30),
     min: z.number().min(0).max(100).default(0),
     max: z.number().min(0).max(100).nullable().default(null),
+    category: text(60),
   })
-  .refine((f) => f.max === null || f.max > f.min, { message: '"To" must be more than "From"', path: ['max'] });
-export type DiscountFilter = z.infer<typeof discountFilterSchema>;
+  .refine((f) => f.kind !== 'discount' || f.max === null || f.max > f.min, { message: '"To" must be more than "From"', path: ['max'] })
+  .refine((f) => f.kind !== 'category' || f.category.length > 0, { message: 'Choose a category', path: ['category'] });
+export type BrandFilter = z.infer<typeof brandFilterSchema>;
 
-export const DEFAULT_DISCOUNT_FILTERS: DiscountFilter[] = [
-  { id: 'disc-0-5', label: '', min: 0, max: 5 },
-  { id: 'disc-5-10', label: '', min: 5, max: 10 },
-  { id: 'disc-10-25', label: '', min: 10, max: 25 },
-  { id: 'disc-25', label: '', min: 25, max: null },
+export const DEFAULT_BRAND_FILTERS: BrandFilter[] = [
+  { id: 'disc-0-5', kind: 'discount', label: '', min: 0, max: 5, category: '' },
+  { id: 'disc-5-10', kind: 'discount', label: '', min: 5, max: 10, category: '' },
+  { id: 'disc-10-25', kind: 'discount', label: '', min: 10, max: 25, category: '' },
+  { id: 'disc-25', kind: 'discount', label: '', min: 25, max: null, category: '' },
 ];
 
-/** The chip text for a filter: its own label, else written from its range. */
-export function discountFilterLabel(f: Pick<DiscountFilter, 'label' | 'min' | 'max'>): string {
+/** The chip text for a filter: its own label, else written from its range or category. */
+export function brandFilterLabel(f: Pick<BrandFilter, 'kind' | 'label' | 'min' | 'max' | 'category'>): string {
   if (f.label) return f.label;
+  if (f.kind === 'category') return f.category;
   const pct = (n: number) => `${Number(n.toFixed(2))}%`;
   if (f.max === null) return `Above ${pct(f.min)}`;
   if (f.min === 0) return `Up to ${pct(f.max)}`;
   return `${pct(f.min)} – ${pct(f.max)}`;
+}
+
+/** Whether a brand shows under a filter. The page script applies the same rule in the browser. */
+export function brandMatchesFilter(f: Pick<BrandFilter, 'kind' | 'min' | 'max' | 'category'>, brand: { discountPercent: number | null; category: string }): boolean {
+  if (f.kind === 'category') return brand.category.trim().toLowerCase() === f.category.trim().toLowerCase();
+  const discount = brand.discountPercent ?? 0;
+  return discount > f.min && (f.max === null || discount <= f.max);
 }
 
 export const brandGridPropsSchema = z.object({
@@ -163,8 +176,11 @@ export const brandGridPropsSchema = z.object({
   initialCount: z.number().int().min(4).max(60).default(12),
   showSearch: z.boolean().default(false),
   showDiscountFilter: z.boolean().default(false),
-  /** The discount filter chips (shown with showDiscountFilter), in order after "All". */
-  discountFilters: z.array(discountFilterSchema).max(8).default(DEFAULT_DISCOUNT_FILTERS),
+  /**
+   * The filter chips (shown with showDiscountFilter), in order after "All": discount ranges and/or categories.
+   * Named before category filters existed; kept so saved pages read the same.
+   */
+  discountFilters: z.array(brandFilterSchema).max(12).default(DEFAULT_BRAND_FILTERS),
   /** Leave out a filter no brand in this grid falls into. */
   hideEmptyFilters: z.boolean().default(false),
   ctaLabel: text(30),

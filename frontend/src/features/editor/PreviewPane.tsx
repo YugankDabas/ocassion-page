@@ -111,7 +111,7 @@ export function PreviewPane({ pageId, content, focusSectionId }: Props) {
       </form>
       <div className="preview-frame-wrap">
         {/* The response is sandboxed by its own policy as well: it can run its script but cannot reach the panel or its cookies. */}
-        <iframe ref={frame} name={FRAME_NAME} title="Page preview" className="preview-frame" style={{ width: WIDTHS[device] }} sandbox="allow-scripts" />
+        <iframe ref={frame} name={FRAME_NAME} title="Page preview" className="preview-frame" style={{ width: WIDTHS[device] }} sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" />
       </div>
     </>
   );

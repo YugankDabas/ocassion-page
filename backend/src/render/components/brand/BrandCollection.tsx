@@ -1,4 +1,4 @@
-import { discountFilterLabel, type DiscountFilter } from '../../../contracts';
+import { brandFilterLabel, brandMatchesFilter, type BrandFilter } from '../../../contracts';
 import { BrandCard } from './BrandCard';
 import type { BrandCardData, Labels } from './types';
 
@@ -8,8 +8,8 @@ interface Props {
   initialCount: number;
   showSearch: boolean;
   showDiscountFilter: boolean;
-  /** Discount filter chips after "All", as set in the panel. */
-  discountFilters: DiscountFilter[];
+  /** Filter chips after "All" (discount ranges, categories), as set in the panel. */
+  filters: BrandFilter[];
   hideEmptyFilters: boolean;
   ctaLabel: string;
   labels: Labels;
@@ -22,12 +22,10 @@ interface Props {
  * paging (grid) or a scroll-snap carousel. Every brand is in the markup (good
  * for SEO); the page script shows / hides cards as the visitor filters.
  */
-export function BrandCollection({ brands, layout, initialCount, showSearch, showDiscountFilter, discountFilters, hideEmptyFilters, ctaLabel, labels, id }: Props) {
+export function BrandCollection({ brands, layout, initialCount, showSearch, showDiscountFilter, filters: allFilters, hideEmptyFilters, ctaLabel, labels, id }: Props) {
   if (brands.length === 0) return null;
   const isCarousel = layout === 'carousel';
-  // Same rule as the page script: above `min`, up to and including `max`.
-  const inFilter = (f: DiscountFilter, discount: number) => discount > f.min && (f.max === null || discount <= f.max);
-  const filters = discountFilters.filter((f) => !hideEmptyFilters || brands.some((b) => inFilter(f, b.discountPercent ?? 0)));
+  const filters = allFilters.filter((f) => !hideEmptyFilters || brands.some((b) => brandMatchesFilter(f, b)));
   const searchId = `brand-search-${id}`;
 
   return (
@@ -43,15 +41,21 @@ export function BrandCollection({ brands, layout, initialCount, showSearch, show
             </div>
           )}
           {showDiscountFilter && filters.length > 0 && (
-            <div className="chips" role="group" aria-label="Filter by discount">
+            <div className="chips" role="group" aria-label="Filter gift cards">
               <button type="button" className="chip" aria-pressed>
                 {labels.filterAll || 'All'}
               </button>
-              {filters.map((f) => (
-                <button key={f.id} type="button" className="chip" aria-pressed={false} data-min={f.min} data-max={f.max ?? undefined}>
-                  {discountFilterLabel(f)}
-                </button>
-              ))}
+              {filters.map((f) =>
+                f.kind === 'category' ? (
+                  <button key={f.id} type="button" className="chip" aria-pressed={false} data-category={f.category.trim().toLowerCase()}>
+                    {brandFilterLabel(f)}
+                  </button>
+                ) : (
+                  <button key={f.id} type="button" className="chip" aria-pressed={false} data-min={f.min} data-max={f.max ?? undefined}>
+                    {brandFilterLabel(f)}
+                  </button>
+                ),
+              )}
             </div>
           )}
         </div>

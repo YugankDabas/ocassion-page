@@ -200,11 +200,16 @@ describe('PageService', () => {
     expect(body).toContain("data-section='faq'"); // the questions still show, full width
   });
 
-  it('shows every discount filter set in the panel, with ranges that leave no gaps', async () => {
+  it('shows every filter set in the panel: discount ranges without gaps, and categories', async () => {
     const page = await ctx.service.create(actor, { occasionId: occasion.id, title: 'Diwali', pageUrl: `${BASE}/diwali-gift-cards`, templateId: 'default' });
     const chips = async () => {
       const html = ctx.hosted('diwali-gift-cards')!.html;
-      return [...html.matchAll(/<button type='button' class='occ-chip'([^>]*)>([^<]*)<\/button>/g)].map((m) => `${m[2]}${/data-min/.test(m[1]!) ? ` [${/data-min='([^']*)'/.exec(m[1]!)![1]}, ${/data-max='([^']*)'/.exec(m[1]!)?.[1] ?? '∞'}]` : ''}`);
+      return [...html.matchAll(/<button type='button' class='occ-chip'([^>]*)>([^<]*)<\/button>/g)].map((m) => {
+        const attrs = m[1]!;
+        if (/data-min/.test(attrs)) return `${m[2]} [${/data-min='([^']*)'/.exec(attrs)![1]}, ${/data-max='([^']*)'/.exec(attrs)?.[1] ?? '∞'}]`;
+        if (/data-category/.test(attrs)) return `${m[2]} [category ${/data-category='([^']*)'/.exec(attrs)![1]}]`;
+        return m[2];
+      });
     };
 
     // Defaults: all four filters, even the ones no brand on this page falls into (both brands here are at 2%).
@@ -216,13 +221,17 @@ describe('PageService', () => {
     const grid = content.sections.find((s) => s.type === 'brandGrid');
     if (grid?.type !== 'brandGrid') throw new Error('no brand grid');
     grid.props.discountFilters = [
-      { id: 'a', label: 'Small savings', min: 0, max: 3 },
-      { id: 'b', label: '', min: 3, max: null },
+      { id: 'a', kind: 'discount', label: 'Small savings', min: 0, max: 3, category: '' },
+      { id: 'b', kind: 'discount', label: '', min: 3, max: null, category: '' },
+      { id: 'c', kind: 'category', label: '', min: 0, max: null, category: 'e-commerce' }, // brands are "E-Commerce": case is ignored
+      { id: 'd', kind: 'category', label: 'Fashion', min: 0, max: null, category: 'Fashion' },
     ];
     grid.props.hideEmptyFilters = true;
     await ctx.service.saveDraft(actor, page.id, { expectedVersion: 1, content });
     await ctx.publications.publish(actor, page.id, 2);
-    expect(await chips()).toEqual(['All', 'Small savings [0, 3]']);
+    expect(await chips()).toEqual(['All', 'Small savings [0, 3]', 'e-commerce [category e-commerce]']);
+    // The cards carry what the page script filters on.
+    expect(ctx.hosted('diwali-gift-cards')!.html).toContain("data-category='E-Commerce'");
   });
 
   it('stores the top banner images and the published flag for gyftr.com', async () => {

@@ -27,8 +27,13 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 /** Text placed inside <style> / <script> must not be able to close the tag. */
 const inlineSafe = (text: string, tag: 'style' | 'script') => text.replace(new RegExp(`</${tag}`, 'gi'), `<\\/${tag}`);
 
-/** Lets the admin panel drive the preview iframe: scroll to the section being edited and keep the scroll position across re-renders. */
-const PREVIEW_BRIDGE = `(function () {
+/**
+ * Lets the admin panel drive the preview iframe: scroll to the section being edited and keep the scroll position
+ * across re-renders. Links (brand cards, buttons) open their real page in a new tab, resolved against the page's
+ * public URL, so the preview itself stays put; #section links scroll within the page as on gyftr.com.
+ */
+const previewBridge = (pageUrl: string) => `(function () {
+  var base = ${JSON.stringify(pageUrl).replace(/</g, '\\u003c')};
   function post(message) { if (window.parent !== window) window.parent.postMessage(message, '*'); }
   window.addEventListener('message', function (event) {
     if (event.source !== window.parent || !event.data) return;
@@ -46,7 +51,11 @@ const PREVIEW_BRIDGE = `(function () {
   }, { passive: true });
   document.addEventListener('click', function (event) {
     var link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
-    if (link && link.getAttribute('href').charAt(0) !== '#') event.preventDefault(); // links are inert in the editor preview
+    if (!link || link.getAttribute('href').charAt(0) === '#') return;
+    event.preventDefault();
+    var url;
+    try { url = new URL(link.getAttribute('href'), base); } catch (e) { return; }
+    if (/^(https?|mailto|tel):$/.test(url.protocol)) window.open(url.href, '_blank', 'noopener');
   });
   post({ type: 'occasion-preview:ready' });
 })();`;
@@ -124,7 +133,7 @@ export class PageRenderer implements IPageRenderer {
     const scripts = [
       ...seo.jsonLd.map((item) => `<script type="application/ld+json">${serializeJsonLd(item)}</script>`),
       `<script>${inlineSafe(this.documentJs, 'script')}</script>`,
-      options.preview ? `<script>${inlineSafe(PREVIEW_BRIDGE, 'script')}</script>` : '',
+      options.preview ? `<script>${inlineSafe(previewBridge(pageUrl), 'script')}</script>` : '',
     ].filter(Boolean);
     return `<!doctype html>\n<html lang="en-IN">\n<head>\n${head.join('\n')}\n</head>\n<body>\n<a href="#main" class="skip-link">Skip to content</a>\n${body}\n${scripts.join('\n')}\n</body>\n</html>\n`;
   }

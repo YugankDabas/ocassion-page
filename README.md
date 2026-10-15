@@ -35,8 +35,9 @@ diwali-gifts-admin/
   image banners, rich text, FAQs, T&Cs, call-to-action. Every visible text, image, icon and colour is a field.
   Each section's spacing can be set (padding, margin and the space under its heading, in desktop px; phones get
   about half, like the built-in spacing), and it can be given its own name in the section list (by default its
-  heading). The T&Cs editor also inserts tables and images. Brand grids have editable discount filter chips
-  (ranges and text; a brand matches when its discount is above "from" and up to "to", so ranges leave no gaps).
+  heading). The T&Cs editor also inserts tables and images. Brand grids have editable filter chips: discount
+  ranges (a brand matches when its discount is above "from" and up to "to", so ranges leave no gaps) and
+  categories (the category set on each brand in the panel; GyFTR's API has none).
   A cleared label or field leaves nothing behind on the page (no empty pill, box or line).
 - **Built-in artwork** – 19 occasion illustrations drawn in code; any slide can use an uploaded creative instead.
 - **Live preview** – rendered by the same renderer as the published HTML.

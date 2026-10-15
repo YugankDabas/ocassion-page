@@ -1,4 +1,5 @@
-import { DEFAULT_DISCOUNT_FILTERS, MOTIFS, discountFilterLabel, type DiscountFilter, type SectionProps, type SectionType } from '../../../contracts';
+import { useId } from 'react';
+import { DEFAULT_BRAND_FILTERS, MOTIFS, brandFilterLabel, brandMatchesFilter, type BrandFilter, type SectionProps, type SectionType } from '../../../contracts';
 import { BrandPicker } from '../../../components/fields/BrandPicker';
 import { IconItemsEditor } from '../../../components/fields/IconItemsEditor';
 import { ImageField } from '../../../components/fields/ImageField';
@@ -6,6 +7,7 @@ import { RichTextEditor } from '../../../components/fields/RichTextEditor';
 import { ListEditor } from '../../../components/fields/SortableList';
 import { Button, Field, NumberInput, Select, TextArea, TextInput, Toggle } from '../../../components/ui';
 import { newId } from '../../../lib/ids';
+import { useBrandCategories, useBrandsByIds } from '../../../lib/queries';
 import { HrefInput } from './HrefInput';
 
 export interface EditorProps<T extends SectionType> {
@@ -187,11 +189,12 @@ export function BrandGridEditor({ props, onChange }: EditorProps<'brandGrid'>) {
       </div>
       <div className="row wrap" style={{ gap: 20 }}>
         <Toggle label="Brand search box" checked={props.showSearch} onChange={(showSearch) => onChange({ showSearch })} />
-        <Toggle label="Discount filter chips" checked={props.showDiscountFilter} onChange={(showDiscountFilter) => onChange({ showDiscountFilter })} />
+        <Toggle label="Filter chips (discount / category)" checked={props.showDiscountFilter} onChange={(showDiscountFilter) => onChange({ showDiscountFilter })} />
       </div>
       {props.showDiscountFilter && (
-        <DiscountFiltersEditor
+        <FiltersEditor
           filters={props.discountFilters}
+          brandIds={props.brands.map((b) => b.brandId)}
           hideEmpty={props.hideEmptyFilters}
           onChange={(discountFilters) => onChange({ discountFilters })}
           onHideEmpty={(hideEmptyFilters) => onChange({ hideEmptyFilters })}
@@ -202,69 +205,135 @@ export function BrandGridEditor({ props, onChange }: EditorProps<'brandGrid'>) {
   );
 }
 
-/** Discounts no filter catches, or that two filters both catch (filters match: above "from", up to and including "to"). */
-function filterProblems(filters: DiscountFilter[]): string[] {
-  const sorted = [...filters].sort((a, b) => a.min - b.min);
+/** Discounts no discount filter catches, or that two of them both catch. */
+function filterProblems(filters: BrandFilter[]): string[] {
+  const sorted = filters.filter((f) => f.kind === 'discount').sort((a, b) => a.min - b.min);
   const problems: string[] = [];
   sorted.forEach((f, i) => {
     const next = sorted[i + 1];
     if (!next) return;
-    if (f.max === null || next.min < f.max) problems.push(`“${discountFilterLabel(f)}” and “${discountFilterLabel(next)}” overlap: some brands show under both.`);
+    if (f.max === null || next.min < f.max) problems.push(`“${brandFilterLabel(f)}” and “${brandFilterLabel(next)}” overlap: some brands show under both.`);
     else if (next.min > f.max) problems.push(`Discounts above ${f.max}% and up to ${next.min}% are in no filter.`);
   });
   return problems;
 }
 
-function DiscountFiltersEditor({
+/**
+ * The filter chips after "All": discount ranges and / or brand categories. Each filter shows how many brands
+ * of this grid it catches, using the same rule as the page.
+ */
+function FiltersEditor({
   filters,
+  brandIds,
   hideEmpty,
   onChange,
   onHideEmpty,
 }: {
-  filters: DiscountFilter[];
+  filters: BrandFilter[];
+  brandIds: string[];
   hideEmpty: boolean;
-  onChange: (filters: DiscountFilter[]) => void;
+  onChange: (filters: BrandFilter[]) => void;
   onHideEmpty: (hide: boolean) => void;
 }) {
+  const listId = useId();
+  const brands = useBrandsByIds(brandIds).data ?? [];
+  const categories = useBrandCategories().data ?? [];
+  const count = (f: BrandFilter) => brands.filter((b) => brandMatchesFilter(f, b)).length;
   const problems = filterProblems(filters);
-  const last = filters[filters.length - 1];
+  const emptyCategories = brands.length ? filters.filter((f) => f.kind === 'category' && f.category && count(f) === 0) : [];
+  const discounts = filters.filter((f) => f.kind === 'discount');
+  const openEnded = discounts.find((f) => f.max === null);
+  const top = discounts.reduce((m, f) => Math.max(m, f.max ?? f.min), 0);
+
+  /**
+   * A new filter continues the ranges without gaps or overlaps: after "Above 25%" it becomes "Above 50%"
+   * (and "Above 25%" becomes "25% – 50%"). With no room left above, it is a category not used yet.
+   */
+  const createFilter = (): BrandFilter => {
+    const id = newId('flt_');
+    const unused = categories.find((c) => !filters.some((f) => f.kind === 'category' && f.category.toLowerCase() === c.toLowerCase()));
+    if (openEnded && openEnded.min + 25 < 100) return { id, kind: 'discount', label: '', min: openEnded.min + 25, max: null, category: '' };
+    if (!openEnded && top < 100) return { id, kind: 'discount', label: '', min: top, max: null, category: '' };
+    return { id, kind: 'category', label: '', min: 0, max: null, category: unused ?? categories[0] ?? 'Category' };
+  };
+  const change = (next: BrandFilter[]) => {
+    const added = next.length === filters.length + 1 ? next.find((f) => !filters.some((o) => o.id === f.id)) : undefined;
+    if (added?.kind === 'discount' && openEnded) next = next.map((f) => (f.id === openEnded.id ? { ...f, max: added.min } : f));
+    onChange(next);
+  };
   return (
     <div className="stack">
+      <datalist id={listId}>
+        {categories.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
       <ListEditor
-        label="Discount filters (after “All”)"
-        max={8}
+        label="Filters (after “All”)"
+        max={12}
         addLabel="Add filter"
         items={filters}
-        onChange={onChange}
-        summary={(f) => discountFilterLabel(f)}
-        createItem={() => ({ id: newId('disc_'), label: '', min: last ? (last.max ?? last.min) : 0, max: null })}
+        onChange={change}
+        summary={(f) => `${brandFilterLabel(f) || 'New filter'}${brands.length ? ` · ${count(f)} brand${count(f) === 1 ? '' : 's'}` : ''}`}
+        createItem={createFilter}
         renderItem={(f, update) => (
-          <div className="grid-3">
-            <NumberInput label="From (above) %" value={f.min} min={0} max={100} step={0.5} onChange={(v) => update({ min: Math.min(100, Math.max(0, v ?? 0)) })} />
-            <NumberInput
-              label="To (up to) %"
-              hint="Empty = no upper limit"
-              value={f.max}
-              min={0}
-              max={100}
-              step={0.5}
-              onChange={(v) => update({ max: v === null ? null : Math.min(100, Math.max(0, v)) })}
-            />
-            <TextInput label="Chip text" value={f.label} maxLength={30} placeholder={discountFilterLabel({ ...f, label: '' })} onChange={(label) => update({ label })} />
+          <div className="stack">
+            <div className="grid-2">
+              <Select
+                label="Filter by"
+                value={f.kind}
+                onChange={(kind) => update({ kind })}
+                options={[
+                  { value: 'discount', label: 'Discount range' },
+                  { value: 'category', label: 'Category' },
+                ]}
+              />
+              <TextInput label="Chip text" value={f.label} maxLength={30} placeholder={brandFilterLabel({ ...f, label: '' }) || 'Written from the filter'} onChange={(label) => update({ label })} />
+            </div>
+            {f.kind === 'discount' ? (
+              <div className="grid-2">
+                <NumberInput label="From (above) %" value={f.min} min={0} max={100} step={0.5} onChange={(v) => update({ min: Math.min(100, Math.max(0, v ?? 0)) })} />
+                <NumberInput
+                  label="To (up to) %"
+                  hint="Empty = no upper limit"
+                  value={f.max}
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  onChange={(v) => update({ max: v === null ? null : Math.min(100, Math.max(0, v)) })}
+                />
+              </div>
+            ) : (
+              <TextInput
+                label="Category"
+                value={f.category}
+                maxLength={60}
+                list={listId}
+                placeholder={categories.length ? `e.g. ${categories[0]}` : 'e.g. Fashion'}
+                hint="Brands whose category (Brands page → Edit → Category) is this, ignoring capitals."
+                onChange={(category) => update({ category })}
+              />
+            )}
           </div>
         )}
       />
       <p className="field-hint" style={{ margin: 0 }}>
-        A brand shows under a filter when its discount is above “From” and up to “To”: 0–5, 5–10, 10–25, 25+ put every brand in exactly one filter.
+        A discount filter shows brands whose discount is above “From” and up to “To” (0–5, 5–10, 10–25, 25+ put every brand in exactly one). A
+        category filter shows brands of that category.
       </p>
       {problems.map((p) => (
         <div key={p} className="alert alert-warning">
           {p}
         </div>
       ))}
+      {emptyCategories.map((f) => (
+        <div key={f.id} className="alert alert-warning">
+          No brand in this grid has the category “{f.category}”. Set it on the Brands page (Edit → Category) or pick another one.
+        </div>
+      ))}
       <div className="row wrap" style={{ gap: 20 }}>
         <Toggle label="Hide filters with no brands in this grid" checked={hideEmpty} onChange={onHideEmpty} />
-        <Button size="sm" variant="ghost" onClick={() => onChange(DEFAULT_DISCOUNT_FILTERS.map((f) => ({ ...f, id: newId('disc_') })))}>
+        <Button size="sm" variant="ghost" onClick={() => onChange(DEFAULT_BRAND_FILTERS.map((f) => ({ ...f, id: newId('flt_') })))}>
           Reset to default filters
         </Button>
       </div>

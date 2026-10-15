@@ -43,7 +43,7 @@ const SOURCE = `(function () {
     var cards = all('.brand-card', root);
     var grid = !!one('.brand-grid', root);
     var initial = Number(root.getAttribute('data-initial')) || 12;
-    var visible = initial, query = '', min = -1, max = Infinity;
+    var visible = initial, query = '', min = -1, max = Infinity, cat = '';
     var more = root.querySelector('[data-view-more]');
     var moreCount = more && more.querySelector('[data-count]');
     var empty = one('.brand-empty', root);
@@ -53,9 +53,9 @@ const SOURCE = `(function () {
       var matches = 0;
       cards.forEach(function (card) {
         var name = (card.getAttribute('data-brand') || '').toLowerCase();
-        var category = (card.getAttribute('data-category') || '').toLowerCase();
+        var category = (card.getAttribute('data-category') || '').trim().toLowerCase();
         var discount = Number(card.getAttribute('data-discount')) || 0;
-        var ok = (!query || name.indexOf(query) > -1 || category.indexOf(query) > -1) && (min < 0 || (discount > min && discount <= max));
+        var ok = (!query || name.indexOf(query) > -1 || category.indexOf(query) > -1) && (min < 0 || (discount > min && discount <= max)) && (!cat || category === cat);
         if (ok) matches++;
         card.hidden = !ok || (grid && matches > visible);
       });
@@ -68,6 +68,7 @@ const SOURCE = `(function () {
         chips.forEach(function (c) { c.setAttribute('aria-pressed', c === chip ? 'true' : 'false'); });
         min = chip.hasAttribute('data-min') ? Number(chip.getAttribute('data-min')) : -1;
         max = chip.hasAttribute('data-max') ? Number(chip.getAttribute('data-max')) : Infinity;
+        cat = (chip.getAttribute('data-category') || '').trim().toLowerCase();
         visible = initial; apply();
       });
     });

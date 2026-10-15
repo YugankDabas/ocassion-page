@@ -1,6 +1,6 @@
 import {
   CONTENT_SCHEMA_VERSION,
-  DEFAULT_DISCOUNT_FILTERS,
+  DEFAULT_BRAND_FILTERS,
   faqPropsSchema,
   heroPropsSchema,
   pageContentSchema,
@@ -120,7 +120,7 @@ export class TemplateFactory implements ITemplateFactory {
           initialCount: 12,
           showSearch: true,
           showDiscountFilter: true,
-          discountFilters: DEFAULT_DISCOUNT_FILTERS,
+          discountFilters: DEFAULT_BRAND_FILTERS,
           hideEmptyFilters: false,
           ctaLabel: 'Buy now',
         },

@@ -208,14 +208,15 @@ export class PageController {
   /**
    * Rendered pages are sent as documents carrying their own policy: sandboxed
    * (no access to the panel, its cookies or the API) and allowed to run only
-   * their inline script.
+   * their inline script. They may open a link in a new tab (a brand's gyftr.com
+   * page), which then loads as a normal page outside the sandbox.
    */
   private sendSandboxedPage(res: Response, html: string): void {
     res.removeHeader('X-Frame-Options');
     res.set({
       'Content-Type': 'text/html; charset=utf-8',
       'Content-Security-Policy': [
-        'sandbox allow-scripts',
+        'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox',
         "default-src 'none'",
         "script-src 'unsafe-inline'",
         "style-src 'unsafe-inline'",
