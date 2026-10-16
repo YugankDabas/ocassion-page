@@ -6,6 +6,7 @@ import { pageContentSchema, type PageContent, type Section, type SectionType } f
 import { Badge, Button, ConfirmDialog, EmptyState, Modal, NumberInput, Spinner, TextArea, TextInput, Toggle } from '../../components/ui';
 import { API_BASE, ApiError, api, errorMessage } from '../../lib/api';
 import { IS_LOCAL } from '../../lib/environment';
+import { websiteUrl } from '../../lib/website';
 import { useAuth } from '../../lib/auth';
 import { newId } from '../../lib/ids';
 import { qk, useConfig, usePage, usePageAction } from '../../lib/queries';
@@ -35,6 +36,8 @@ export function PageEditorPage() {
 }
 
 function Editor({ page, publicBaseUrl }: { page: PageDetail; publicBaseUrl: string }) {
+  /** The GyFTR website pages are published to (the stored config query; already loaded by the page). */
+  const siteBase = useConfig().data?.brandPageBaseUrl;
   const auth = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -157,7 +160,7 @@ function Editor({ page, publicBaseUrl }: { page: PageDetail; publicBaseUrl: stri
     await runAction(
       'publish',
       { expectedVersion: v, note },
-      IS_LOCAL ? 'Published on this machine only. Nothing was sent to gyftr.com.' : 'Published. The page HTML is now available to gyftr.com.',
+      IS_LOCAL ? 'Published on this machine only. Nothing was sent to the website.' : 'Published. The page HTML is now available to the website.',
     );
   };
 
@@ -242,7 +245,7 @@ function Editor({ page, publicBaseUrl }: { page: PageDetail; publicBaseUrl: stri
             ...(auth.can('templates.write') ? [{ label: 'Save as template', onSelect: () => setDialog('template') }] : []),
             { label: 'Duplicate page', onSelect: () => setDialog('duplicate') },
             ...(status === 'PUBLISHED' ? [{ label: 'View published HTML ↗', href: `${API_BASE}/pages/${page.id}/published-view` }] : []),
-            ...(page.liveUrl && !IS_LOCAL ? [{ label: 'Open on gyftr.com ↗', href: page.liveUrl }] : []),
+            ...(page.liveUrl && !IS_LOCAL ? [{ label: 'Open on the website ↗', href: websiteUrl(page.liveUrl, siteBase) }] : []),
             ...(canPublish && status === 'PUBLISHED' ? [{ label: 'Unpublish', onSelect: () => setDialog('unpublish'), danger: true }] : []),
             ...(canPublish && status !== 'ARCHIVED' ? [{ label: 'Archive', onSelect: () => setDialog('archive'), danger: true }] : []),
             ...(canPublish && status === 'ARCHIVED'
@@ -754,7 +757,7 @@ function PublishDialog({
               (moving from <span className="mono">{liveUrl}</span>)
             </>
           ) : null}
-          .{!IS_LOCAL && ' gyftr.com fetches it from this system; nothing is pushed to the live site.'}
+          .{!IS_LOCAL && ' The website fetches it from this system; nothing is pushed to the live site.'}
         </p>
         <TextArea label="Change note (optional)" value={note} maxLength={300} onChange={setNote} placeholder="e.g. Added Dhanteras banner" />
       </div>

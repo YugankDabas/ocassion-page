@@ -4,8 +4,10 @@ import { toast } from 'sonner';
 import { Badge, Button, ConfirmDialog, EmptyState, PageHeader, Select, Spinner, formatDate } from '../../components/ui';
 import { API_BASE, errorMessage } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
-import { useDeletePage, useOccasions, usePages } from '../../lib/queries';
+import { IS_LOCAL } from '../../lib/environment';
+import { useConfig, useDeletePage, useOccasions, usePages } from '../../lib/queries';
 import type { PageListItem } from '../../lib/types';
+import { websiteUrl } from '../../lib/website';
 import { CreatePageModal } from './CreatePageModal';
 
 const STATUS_OPTIONS = [
@@ -16,6 +18,7 @@ const STATUS_OPTIONS = [
 ] as const;
 
 export function PagesListPage() {
+  const siteBase = useConfig().data?.brandPageBaseUrl;
   const auth = useAuth();
   const navigate = useNavigate();
   const [status, setStatus] = useState<(typeof STATUS_OPTIONS)[number]['value']>('');
@@ -106,7 +109,14 @@ export function PagesListPage() {
                     </td>
                     <td className="actions">
                       {p.status === 'PUBLISHED' && (
-                        <a className="btn btn-ghost btn-sm" href={`${API_BASE}/pages/${p.id}/published-view`} target="_blank" rel="noopener noreferrer" title="Open the published HTML">
+                        <a
+                          className="btn btn-ghost btn-sm"
+                          // On this machine nothing reaches the website: the stored HTML is opened instead.
+                          href={IS_LOCAL ? `${API_BASE}/pages/${p.id}/published-view` : websiteUrl(p.liveUrl ?? p.pageUrl, siteBase)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={IS_LOCAL ? 'Open the published HTML' : 'Open the page on the website'}
+                        >
                           View ↗
                         </a>
                       )}
