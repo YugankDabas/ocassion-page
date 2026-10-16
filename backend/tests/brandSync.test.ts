@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { ConflictError } from '../src/lib/errors';
+import { ConflictError, NotFoundError } from '../src/lib/errors';
 import type { BrandRecord, BrandSyncWrite, IBrandRepository } from '../src/repositories/types';
 import { AuditService } from '../src/services/AuditService';
 import { BrandService } from '../src/services/BrandService';
-import { BrandSyncService, GYFTR_API, GyftrApiError } from '../src/services/BrandSyncService';
+import { BrandSyncService, GyftrApiError } from '../src/services/BrandSyncService';
+import { gyftrTarget, type GyftrTarget } from '../src/config/gyftr';
 import { brand, noAudit, silentLogger } from './fakes';
 
 /** Brand repository in memory, with what the sync and the edit form use. */
@@ -37,6 +38,14 @@ class SyncBrandRepository {
     for (const c of write.creates) this.brands.push(brand({ ...c, id: randomUUID(), syncedAt: new Date() }));
     for (const u of write.updates) Object.assign(this.brands.find((b) => b.id === u.id)!, u.data, { syncedAt: new Date() });
   }
+  async delete(id: string) {
+    this.brands = this.brands.filter((b) => b.id !== id);
+  }
+  async deactivateOtherSources(source: string) {
+    const others = this.brands.filter((b) => b.isActive && b.gyftrSource !== null && b.gyftrSource !== source);
+    for (const b of others) b.isActive = false;
+    return others.length;
+  }
   async setManualFields(id: string, manualFields: string[]) {
     return this.update(id, { manualFields });
   }
@@ -55,13 +64,18 @@ const detail = (name: string, discount: number | string | null, redemption = 'ON
   data: { brand: { brand_name: name, brand_logo: null, redemption_type: redemption, defaut_pg_dis: discount } },
 });
 
+const PROD = gyftrTarget({ ADMIN_FRONTEND_ORIGIN: 'https://occasion-admin.gyftr.com' });
+const STAGING = gyftrTarget({ ADMIN_FRONTEND_ORIGIN: 'https://occasion-admin.gyftr.net' });
+const GYFTR_API = PROD.apiBase;
+
 /** Answers like GyFTR's API: the list, and a detail per slug (an Error answer is thrown). */
-function gyftr(list: unknown[], details: Record<string, unknown>) {
+function gyftr(list: unknown[], details: Record<string, unknown>, apiBase = GYFTR_API) {
   const calls: string[] = [];
   const fetchJson = async (url: string) => {
     calls.push(url);
-    if (url === `${GYFTR_API}/home/brand/list`) return { data: { brands: list } };
-    const slug = decodeURIComponent(url.slice(`${GYFTR_API}/brand/detail/`.length));
+    if (url === `${apiBase}/home/brand/list`) return { data: { brands: list } };
+    if (!url.startsWith(`${apiBase}/brand/detail/`)) throw new Error(`unexpected address ${url}`);
+    const slug = decodeURIComponent(url.slice(`${apiBase}/brand/detail/`.length));
     const answer = details[slug];
     if (answer instanceof Error || answer === undefined) throw answer ?? new Error(`no detail for ${slug}`);
     return answer;
@@ -69,13 +83,15 @@ function gyftr(list: unknown[], details: Record<string, unknown>) {
   return { fetchJson, calls };
 }
 
-function setup(existing: BrandRecord[], api: ReturnType<typeof gyftr>) {
+function setup(existing: BrandRecord[], api: ReturnType<typeof gyftr>, target: GyftrTarget = PROD) {
+  // Brands given a GyFTR id here came from the production API (as every brand synced before staging did).
+  for (const b of existing) if (b.gyftrId !== null && b.gyftrSource === null) b.gyftrSource = PROD.source;
   const repo = new SyncBrandRepository(existing);
   const changed: string[] = [];
   const changes = { changed: (what: string) => void changed.push(what) };
   const audit = new AuditService(noAudit, silentLogger);
-  const sync = new BrandSyncService(repo as unknown as IBrandRepository, changes as never, audit, silentLogger, 'https://www.gyftr.com', api.fetchJson, 2);
-  const service = new BrandService(repo as unknown as IBrandRepository, changes as never, audit);
+  const sync = new BrandSyncService(repo as unknown as IBrandRepository, changes as never, audit, silentLogger, target, api.fetchJson, 2);
+  const service = new BrandService(repo as unknown as IBrandRepository, changes as never, audit, target.brandPageBase, target.source);
   return { repo, sync, service, changed };
 }
 
@@ -220,4 +236,87 @@ describe('Brand sync from GyFTR', () => {
     expect(await service.importCsv(actor, Buffer.from(csv))).toMatchObject({ created: 0, updated: 1 });
     expect(amazon).toMatchObject({ discountPercent: 5, category: 'Shopping', manualFields: ['discountPercent'] });
   });
+
+  it('follows GyFTR staging on a staging panel: brand API and brand pages', async () => {
+    expect(STAGING).toMatchObject({ environment: 'staging', apiBase: 'https://gyftrapi.gyftr.net/gyftrapi/api/v1', source: 'gyftrapi.gyftr.net', brandPageBase: 'https://www.gvhelpdesk.net' });
+    expect(PROD).toMatchObject({ environment: 'production', apiBase: 'https://api.gyftr.com/gyftrapi/api/v1', source: 'api.gyftr.com', brandPageBase: 'https://www.gyftr.com' });
+    expect(gyftrTarget({ ADMIN_FRONTEND_ORIGIN: 'http://localhost:5173' }).environment).toBe('staging');
+    expect(gyftrTarget({ ADMIN_FRONTEND_ORIGIN: 'https://occasion-admin.gyftr.com' }).environment).toBe('production');
+    expect(gyftrTarget({ ADMIN_FRONTEND_ORIGIN: 'https://evil-gyftr.net' }).environment).toBe('production'); // only *.gyftr.net
+    expect(STAGING.configuredBy).toBe('panel address');
+    // GYFTR_API_URL / GYFTR_BRAND_PAGE_BASE_URL (.env, Secrets Manager) decide when set.
+    expect(gyftrTarget({ ADMIN_FRONTEND_ORIGIN: 'https://occasion-admin.gyftr.net', GYFTR_API_URL: 'https://api.gyftr.com/gyftrapi/api/v1/', GYFTR_BRAND_PAGE_BASE_URL: 'https://www.gyftr.com/' }))
+      .toEqual({ environment: 'production', apiBase: 'https://api.gyftr.com/gyftrapi/api/v1', source: 'api.gyftr.com', brandPageBase: 'https://www.gyftr.com', configuredBy: 'settings' });
+    expect(gyftrTarget({ ADMIN_FRONTEND_ORIGIN: 'https://occasion-admin.gyftr.com', GYFTR_API_URL: 'https://gyftrapi.gyftr.net/gyftrapi/api/v1', GYFTR_BRAND_PAGE_BASE_URL: 'https://www.gvhelpdesk.net' }))
+      .toMatchObject({ environment: 'staging', source: 'gyftrapi.gyftr.net', brandPageBase: 'https://www.gvhelpdesk.net' });
+    // Only the API set: the site is that API's environment's.
+    expect(gyftrTarget({ ADMIN_FRONTEND_ORIGIN: 'https://occasion-admin.gyftr.com', GYFTR_API_URL: 'https://gyftrapi.gyftr.net/gyftrapi/api/v1' }).brandPageBase).toBe('https://www.gvhelpdesk.net');
+    // Any other API (e.g. a new host) with its own site.
+    expect(gyftrTarget({ ADMIN_FRONTEND_ORIGIN: 'https://occasion-admin.gyftr.net', GYFTR_API_URL: 'https://brands.example.net/api/v1', GYFTR_BRAND_PAGE_BASE_URL: 'https://shop.example.net' }))
+      .toMatchObject({ apiBase: 'https://brands.example.net/api/v1', source: 'brands.example.net', brandPageBase: 'https://shop.example.net' });
+  });
+
+  it('switching to staging matches brands by slug, never by the other API’s id, and links them to the staging site', async () => {
+    // Synced from production before: in staging, id 95 is another brand and "aldo" has another id.
+    const flipkart = brand({ gyftrId: 95, slug: 'flipkart', name: 'Flipkart', productUrl: 'https://www.gyftr.com/flipkart' });
+    const aldo = brand({ gyftrId: 624, slug: 'aldo', name: 'ALDO', productUrl: 'https://www.gyftr.com/aldo', category: 'Fashion', manualFields: ['discountPercent'], discountPercent: 9 });
+    const custom = brand({ gyftrId: 7, slug: 'croma', name: 'Croma', productUrl: 'https://www.gyftr.com/croma?utm=occasion' });
+    // Switched on by hand while it came from production: still switched off, production brands never show on staging.
+    const keptOn = brand({ gyftrId: 8, slug: 'tanishq', name: 'Tanishq', manualFields: ['isActive'] });
+    const handMade = brand({ slug: 'my-own', name: 'My own brand', productUrl: 'https://example.com/mine' });
+    const api = gyftr(
+      [listed(95, 'bakingo-promo-code', 'Bakingo'), listed(266, 'aldo', 'ALDO'), listed(300, 'croma', 'Croma')],
+      { 'bakingo-promo-code': detail('Bakingo', 4), aldo: detail('ALDO', 3), croma: detail('Croma', 2) },
+      STAGING.apiBase,
+    );
+    const { repo, sync } = setup([flipkart, aldo, custom, handMade, keptOn], api, STAGING);
+    expect(await sync.start(actor)).toMatchObject({ listed: 3, created: 1, updated: 2, deactivated: 2 });
+    expect(keptOn.isActive).toBe(false);
+    expect(api.calls.every((u) => u.startsWith('https://gyftrapi.gyftr.net/gyftrapi/api/v1/'))).toBe(true);
+
+    // Flipkart is not turned into Bakingo: it is not in the staging list, so it is switched off (not deleted).
+    expect(flipkart).toMatchObject({ name: 'Flipkart', slug: 'flipkart', isActive: false, gyftrSource: 'api.gyftr.com' });
+    // Bakingo is a new brand, linking to the staging site.
+    expect(repo.brands.find((b) => b.slug === 'bakingo-promo-code')).toMatchObject({ gyftrId: 95, gyftrSource: 'gyftrapi.gyftr.net', productUrl: 'https://www.gvhelpdesk.net/bakingo-promo-code' });
+    // ALDO keeps its record (pages refer to it), now from staging: new id, staging link, hand-edited discount and category kept.
+    expect(aldo).toMatchObject({ gyftrId: 266, gyftrSource: 'gyftrapi.gyftr.net', productUrl: 'https://www.gvhelpdesk.net/aldo', discountPercent: 9, category: 'Fashion', isActive: true });
+    // A link typed by hand is kept.
+    expect(custom).toMatchObject({ gyftrId: 300, gyftrSource: 'gyftrapi.gyftr.net', productUrl: 'https://www.gyftr.com/croma?utm=occasion' });
+    // Brands added by hand are not GyFTR's to switch off.
+    expect(handMade.isActive).toBe(true);
+
+    // Brands from the other GyFTR are not in the panel at all; this one's cannot be deleted (the sync adds them back).
+    const service = new BrandService(repo as unknown as IBrandRepository, { changed: () => {} } as never, new AuditService(noAudit, silentLogger), STAGING.brandPageBase, STAGING.source);
+    await expect(service.get(flipkart.id)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(service.delete(actor, flipkart.id)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(sync.resetToGyftr(actor, flipkart.id)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(service.delete(actor, aldo.id)).rejects.toBeInstanceOf(ConflictError);
+    expect((await service.get(aldo.id)).slug).toBe('aldo');
+    expect((await service.get(handMade.id)).slug).toBe('my-own');
+  });
+
+  it('follows a slug GyFTR changes, with its link, unless another brand has that slug', async () => {
+    const tanishq = brand({ gyftrId: 86, slug: 'tanishq', name: 'Tanishq', productUrl: 'https://www.gyftr.com/tanishq' });
+    const bata = brand({ gyftrId: 87, slug: 'bata', name: 'Bata', productUrl: 'https://www.gyftr.com/bata' });
+    const other = brand({ slug: 'bata-shoes', name: 'Bata shoes (by hand)' });
+    const api = gyftr([listed(86, 'tanishq-jewellery', 'Tanishq'), listed(87, 'bata-shoes', 'Bata')], { 'tanishq-jewellery': detail('Tanishq', 1), 'bata-shoes': detail('Bata', 1) });
+    const { sync } = setup([tanishq, bata, other], api);
+    await sync.start(actor);
+    expect(tanishq).toMatchObject({ slug: 'tanishq-jewellery', productUrl: 'https://www.gyftr.com/tanishq-jewellery' });
+    expect(bata).toMatchObject({ slug: 'bata', productUrl: 'https://www.gyftr.com/bata' }); // "bata-shoes" belongs to another brand
+  });
+
+  it('switches off brands from another GyFTR brand API right away (at start-up), before any sync', async () => {
+    const prodBrand = brand({ gyftrId: 1, slug: 'amazon', manualFields: ['isActive'] }); // given a production source by setup()
+    const handMade = brand({ slug: 'mine' });
+    const { sync, changed } = setup([prodBrand, handMade], gyftr([], {}), STAGING);
+    expect(await sync.hideOtherSources()).toBe(1);
+    expect(prodBrand.isActive).toBe(false);
+    expect(handMade.isActive).toBe(true);
+    expect(changed).toEqual(['brands']); // published pages are re-rendered without it
+    expect(await sync.hideOtherSources()).toBe(0); // nothing left: no re-render
+    expect(changed).toEqual(['brands']);
+  });
 });
+
+

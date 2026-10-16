@@ -16,6 +16,7 @@ function toRecord(b: Brand): BrandRecord {
     minDenomination: b.minDenomination,
     isActive: b.isActive,
     gyftrId: b.gyftrId,
+    gyftrSource: b.gyftrSource,
     manualFields: b.manualFields,
     syncedAt: b.syncedAt,
     createdAt: b.createdAt,
@@ -23,15 +24,20 @@ function toRecord(b: Brand): BrandRecord {
   };
 }
 
+/** Brands added by hand or synced from this GyFTR brand API; those from another one are never listed. */
+const fromSource = (source: string | undefined): Prisma.BrandWhereInput =>
+  source ? { OR: [{ gyftrSource: null }, { gyftrSource: source }] } : {};
+
 export class PrismaBrandRepository implements IBrandRepository {
   constructor(private readonly db: PrismaClient) {}
 
   async query(q: BrandQuery): Promise<Paginated<BrandRecord>> {
     const search = q.search?.trim();
     const where: Prisma.BrandWhereInput = {
-      ...(search
-        ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { slug: { contains: search, mode: 'insensitive' } }] }
-        : {}),
+      AND: [
+        search ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { slug: { contains: search, mode: 'insensitive' } }] } : {},
+        fromSource(q.source),
+      ],
       ...(q.category ? { category: q.category } : {}),
       ...(q.active === undefined ? {} : { isActive: q.active }),
     };
@@ -52,26 +58,26 @@ export class PrismaBrandRepository implements IBrandRepository {
     return b && toRecord(b);
   }
 
-  async findManyByIds(ids: string[], opts: { activeOnly?: boolean } = {}): Promise<BrandRecord[]> {
+  async findManyByIds(ids: string[], opts: { activeOnly?: boolean; source?: string } = {}): Promise<BrandRecord[]> {
     if (ids.length === 0) return [];
     const rows = await this.db.brand.findMany({
-      where: { id: { in: ids }, ...(opts.activeOnly ? { isActive: true } : {}) },
+      where: { id: { in: ids }, ...(opts.activeOnly ? { isActive: true } : {}), ...fromSource(opts.source) },
     });
     return rows.map(toRecord);
   }
 
-  async firstActive(limit: number): Promise<BrandRecord[]> {
+  async firstActive(limit: number, source?: string): Promise<BrandRecord[]> {
     const rows = await this.db.brand.findMany({
-      where: { isActive: true },
+      where: { isActive: true, ...fromSource(source) },
       orderBy: [{ discountPercent: { sort: 'desc', nulls: 'last' } }, { name: 'asc' }],
       take: limit,
     });
     return rows.map(toRecord);
   }
 
-  async categories(): Promise<string[]> {
+  async categories(source?: string): Promise<string[]> {
     const rows = await this.db.brand.findMany({
-      where: { category: { not: '' } },
+      where: { category: { not: '' }, ...fromSource(source) },
       distinct: ['category'],
       select: { category: true },
       orderBy: { category: 'asc' },
@@ -114,5 +120,13 @@ export class PrismaBrandRepository implements IBrandRepository {
 
   async setManualFields(id: string, fields: string[]): Promise<BrandRecord> {
     return toRecord(await this.db.brand.update({ where: { id }, data: { manualFields: fields } }));
+  }
+
+  async deactivateOtherSources(source: string): Promise<number> {
+    const { count } = await this.db.brand.updateMany({
+      where: { isActive: true, gyftrSource: { not: null }, NOT: { gyftrSource: source } },
+      data: { isActive: false },
+    });
+    return count;
   }
 }

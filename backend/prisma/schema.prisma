@@ -189,8 +189,10 @@ model Brand {
   redemption      RedemptionMode @default(BOTH)
   minDenomination Int?
   isActive        Boolean        @default(true)
-  /// The brand's id at GyFTR (brand API); null for a brand added by hand.
-  gyftrId         Int?           @unique
+  /// The brand's id at GyFTR (brand API); null for a brand added by hand. Unique per source.
+  gyftrId         Int?
+  /// The GyFTR brand API the brand came from (its host, e.g. api.gyftr.com, gyftrapi.gyftr.net).
+  gyftrSource     String?
   /// Fields changed by hand in the panel; the GyFTR sync leaves them alone.
   manualFields    String[]       @default([])
   /// Last time the brand's data came from GyFTR.
@@ -198,6 +200,7 @@ model Brand {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
+  @@unique([gyftrSource, gyftrId])
   @@index([name])
   @@index([category])
 }

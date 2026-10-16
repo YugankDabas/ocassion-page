@@ -17,8 +17,10 @@ import {
   updatePageDraftInputSchema,
   updateUserInputSchema,
 } from '../contracts';
+import type { GyftrTarget } from '../config/gyftr';
 import { randomToken } from '../lib/crypto';
 import { BadRequestError, NotFoundError } from '../lib/errors';
+import type { BrandRecord } from '../repositories/types';
 import type { Actor, AuditService } from '../services/AuditService';
 import type { AuthService } from '../services/AuthService';
 import type { BrandService } from '../services/BrandService';
@@ -93,6 +95,8 @@ export class PageController {
     private readonly publications: PublicationService,
     /** Origin of the admin panel: the only other site allowed to show the preview in a frame. */
     private readonly panelOrigin: string,
+    /** The GyFTR site brand cards link to: the panel suggests `<base>/<slug>` as a new brand's link. */
+    private readonly gyftr: Pick<GyftrTarget, 'brandPageBase'>,
   ) {}
 
   list = async (req: Request, res: Response) => {
@@ -109,7 +113,7 @@ export class PageController {
 
   /** Lets the panel show/validate URLs before saving. */
   config = async (_req: Request, res: Response) => {
-    res.json({ publicBaseUrl: this.pagePublicBaseUrl });
+    res.json({ publicBaseUrl: this.pagePublicBaseUrl, brandPageBaseUrl: this.gyftr.brandPageBase });
   };
 
   get = async (req: Request, res: Response) => {
@@ -249,6 +253,9 @@ export class PageController {
 /** For a brand from GyFTR the slug is GyFTR's (it may contain characters a hand-made slug may not); the service checks it. */
 const brandUpdateSchema = brandInputSchema.extend({ slug: z.string().trim().min(1).max(120) });
 
+/** A brand as the panel gets it: which GyFTR brand API it came from stays on the server. */
+const forPanel = ({ gyftrSource: _source, ...brand }: BrandRecord) => brand;
+
 export class BrandController {
   constructor(
     private readonly brands: BrandService,
@@ -268,7 +275,7 @@ export class BrandController {
 
   /** Drops a brand's hand-made changes and takes its data from GyFTR again. */
   resetToGyftr = async (req: Request, res: Response) => {
-    res.json({ brand: await this.sync.resetToGyftr(actorOf(req), parse(idParam, req.params).id) });
+    res.json({ brand: forPanel(await this.sync.resetToGyftr(actorOf(req), parse(idParam, req.params).id)) });
   };
 
   list = async (req: Request, res: Response) => {
@@ -284,8 +291,9 @@ export class BrandController {
       }),
       req.query,
     );
-    if (q.ids) return res.json({ items: await this.brands.findMany(q.ids), total: q.ids.length, page: 1, pageSize: q.ids.length });
-    res.json(await this.brands.query(q));
+    if (q.ids) return res.json({ items: (await this.brands.findMany(q.ids)).map(forPanel), total: q.ids.length, page: 1, pageSize: q.ids.length });
+    const page = await this.brands.query(q);
+    res.json({ ...page, items: page.items.map(forPanel) });
   };
 
   categories = async (_req: Request, res: Response) => {
@@ -293,16 +301,16 @@ export class BrandController {
   };
 
   get = async (req: Request, res: Response) => {
-    res.json({ brand: await this.brands.get(parse(idParam, req.params).id) });
+    res.json({ brand: forPanel(await this.brands.get(parse(idParam, req.params).id)) });
   };
 
   create = async (req: Request, res: Response) => {
-    res.status(201).json({ brand: await this.brands.create(actorOf(req), parse(brandInputSchema, req.body)) });
+    res.status(201).json({ brand: forPanel(await this.brands.create(actorOf(req), parse(brandInputSchema, req.body))) });
   };
 
   update = async (req: Request, res: Response) => {
     const { id } = parse(idParam, req.params);
-    res.json({ brand: await this.brands.update(actorOf(req), id, parse(brandUpdateSchema, req.body)) });
+    res.json({ brand: forPanel(await this.brands.update(actorOf(req), id, parse(brandUpdateSchema, req.body))) });
   };
 
   remove = async (req: Request, res: Response) => {

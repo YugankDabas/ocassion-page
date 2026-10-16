@@ -327,9 +327,14 @@ Manager secret; the container is told only the secret's name.
   "JWT_SECRET": "<output of: openssl rand -base64 48>",
   "PAGE_PUBLIC_BASE_URL": "https://www.gyftr.com/occasion",
   "S3_BUCKET": "<bucket-name>",
-  "TECH_READER_PASSWORD": "<output of: openssl rand -base64 24>"
+  "TECH_READER_PASSWORD": "<output of: openssl rand -base64 24>",
+  "GYFTR_API_URL": "https://gyftrapi.gyftr.net/gyftrapi/api/v1",
+  "GYFTR_BRAND_PAGE_BASE_URL": "https://www.gvhelpdesk.net"
 }
 ```
+
+(The two `GYFTR_*` values above are staging's. Production: `https://api.gyftr.com/gyftrapi/api/v1` and
+`https://www.gyftr.com`.)
 
 - **The secret must be valid JSON: every value in double quotes**, including `DB_NAME` and `DB_PORT`. Use the
   console's Key/value tab to avoid mistakes. (A hand-typed secret with an unquoted value, such as
@@ -340,6 +345,12 @@ Manager secret; the container is told only the secret's name.
   (TLS) for a remote database, at most 10 connections per container. The RDS certificate chain is not verified
   (`rejectUnauthorized: false`), the same as in the other GyFTR panels.
 - `JWT_SECRET` must be at least 32 characters and different in staging and production.
+- `GYFTR_API_URL` / `GYFTR_BRAND_PAGE_BASE_URL`: the GyFTR brand API the brand library syncs from, and the site brand
+  cards link to (`<base>/<slug>`). The staging and production APIs number their brands independently, so each synced
+  brand records the API it came from; after a change, the next sync takes existing brands over **by slug**. Brands
+  from another API are switched off at start-up (never deleted) and are not listed anywhere in the panel; a page that
+  still refers to one shows it as "No longer in the brand list" in the editor and leaves it out of the page. Left out, they are chosen from
+  `ADMIN_FRONTEND_ORIGIN` (a panel on `*.gyftr.net` follows staging, any other production).
 - `S3_BUCKET` is the bucket name only: no `s3://`, no dots. The region is `AWS_REGION`. Only the folder
   `occasion-pages/` is used (written, read, deleted), so the bucket can be shared, and it stays private: this
   API serves the images at `https://api-occasion-admin.gyftr.net/media/occasion-pages/...`, reading them from

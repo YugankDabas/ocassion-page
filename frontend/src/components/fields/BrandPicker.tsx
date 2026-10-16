@@ -113,9 +113,9 @@ function BrandRow({
         </button>
         {brand ? <BrandLogo brand={brand} /> : <span className="monogram">?</span>}
         <div className="name">
-          {brand ? brand.name : loading ? 'Loading…' : 'Missing brand (deleted?)'}
+          {brand ? brand.name : loading ? 'Loading…' : 'No longer in the brand list'}
           <small>
-            {brand ? `${discountText(brand) || 'No discount'}${brand.isActive ? '' : ' · INACTIVE (hidden on site)'}` : ''}
+            {brand ? `${discountText(brand) || 'No discount'}${brand.isActive ? '' : ' · INACTIVE (hidden on site)'}` : loading ? '' : 'Not shown on the page. You can remove it.'}
           </small>
         </div>
         <input

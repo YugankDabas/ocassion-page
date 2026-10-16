@@ -120,6 +120,8 @@ export interface AuditEntry {
 
 export interface AppConfig {
   publicBaseUrl: string;
+  /** The GyFTR site brand cards link to: a new brand's link is suggested as `<base>/<slug>`. */
+  brandPageBaseUrl: string;
 }
 
 export type { Role };

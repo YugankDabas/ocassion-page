@@ -28,6 +28,7 @@ import {
 } from './repositories/prisma/PrismaRepositories';
 import { AuditService } from './services/AuditService';
 import { AuthService } from './services/AuthService';
+import { gyftrTarget } from './config/gyftr';
 import { BrandSyncService } from './services/BrandSyncService';
 import { BrandService } from './services/BrandService';
 import { ContentChangeHub } from './services/ContentChanges';
@@ -85,6 +86,10 @@ export function createContainer(env: Env, logger: Logger, prisma = createPrismaC
   // A brand or site-settings change re-renders the published pages.
   changes.subscribe(() => publications.refreshAll());
 
+  // Which GyFTR (production or staging) the brand library follows: worked out from the panel's address.
+  const gyftr = gyftrTarget(env);
+  logger.info({ brandApi: gyftr.apiBase, brandPages: gyftr.brandPageBase, from: gyftr.configuredBy }, 'GyFTR brand settings');
+
   const services = {
     audit,
     site,
@@ -92,8 +97,8 @@ export function createContainer(env: Env, logger: Logger, prisma = createPrismaC
     users: new UserService(repos.users, hasher, audit),
     occasions: new OccasionService(repos.occasions, urls, audit),
     templates: new TemplateService(repos.templates, repos.pages, audit),
-    brands: new BrandService(repos.brands, changes, audit, new URL(env.PAGE_PUBLIC_BASE_URL).origin),
-    brandSync: new BrandSyncService(repos.brands, changes, audit, logger, new URL(env.PAGE_PUBLIC_BASE_URL).origin),
+    brands: new BrandService(repos.brands, changes, audit, gyftr.brandPageBase, gyftr.source),
+    brandSync: new BrandSyncService(repos.brands, changes, audit, logger, gyftr),
     media: new MediaService(repos.media, storage, new SharpImageProcessor(), audit, logger),
     pages,
     publications,
@@ -102,7 +107,7 @@ export function createContainer(env: Env, logger: Logger, prisma = createPrismaC
   const controllers = {
     // Every sign-in to the panel refreshes the brand library from GyFTR, in the background.
     auth: new AuthController(services.auth, { secure: env.isProduction }, (actor) => void services.brandSync.start(actor)),
-    pages: new PageController(services.pages, services.templates, urls.baseUrl, services.publications, env.ADMIN_FRONTEND_ORIGIN),
+    pages: new PageController(services.pages, services.templates, urls.baseUrl, services.publications, env.ADMIN_FRONTEND_ORIGIN, gyftr),
     brands: new BrandController(services.brands, services.brandSync),
     media: new MediaController(services.media),
     catalog: new CatalogController(services.occasions, services.templates, services.site, services.audit),

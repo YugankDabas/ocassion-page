@@ -22,25 +22,29 @@ export class BrandService {
     private readonly brands: IBrandRepository,
     private readonly changes: IContentChangeNotifier,
     private readonly audit: AuditService,
+    /** The GyFTR site brand cards link to (its page for the slug), e.g. https://www.gyftr.com. */
     private readonly productUrlBase = 'https://www.gyftr.com',
+    /** The GyFTR brand API the sync follows (its host): brands from it are added back by every sync. */
+    private readonly gyftrSource = 'api.gyftr.com',
   ) {}
 
+  // The panel only ever sees brands added by hand or from the GyFTR brand API this panel follows.
   query(q: BrandQuery) {
-    return this.brands.query(q);
+    return this.brands.query({ ...q, source: this.gyftrSource });
   }
 
   categories() {
-    return this.brands.categories();
+    return this.brands.categories(this.gyftrSource);
   }
 
   async get(id: string) {
     const brand = await this.brands.findById(id);
-    if (!brand) throw new NotFoundError('Brand');
+    if (!brand || (brand.gyftrSource !== null && brand.gyftrSource !== this.gyftrSource)) throw new NotFoundError('Brand');
     return brand;
   }
 
   findMany(ids: string[]) {
-    return this.brands.findManyByIds(ids);
+    return this.brands.findManyByIds(ids, { source: this.gyftrSource });
   }
 
   async create(actor: Actor, input: BrandInput) {
@@ -60,7 +64,7 @@ export class BrandService {
     const data = before.gyftrId === null ? input : { ...input, slug: before.slug };
     const clash = await this.brands.findBySlug(data.slug);
     if (clash && clash.id !== id) throw new ConflictError(`Brand slug "${data.slug}" already exists`);
-    const manualFields = before.gyftrId === null ? before.manualFields : [...new Set([...before.manualFields, ...changedSyncedFields(before, data)])];
+    const manualFields = before.gyftrId === null ? before.manualFields : [...new Set([...before.manualFields, ...changedSyncedFields(before, data, this.productUrlBase)])];
     const brand = await this.brands.update(id, { ...this.withDefaults(data), manualFields });
     await this.afterChange(actor, 'brand.update', id, { slug: brand.slug, ...(manualFields.length ? { manualFields } : {}) });
     return brand;
@@ -68,7 +72,7 @@ export class BrandService {
 
   async delete(actor: Actor, id: string) {
     const brand = await this.get(id);
-    if (brand.gyftrId !== null) {
+    if (brand.gyftrId !== null && brand.gyftrSource === this.gyftrSource) {
       throw new ConflictError('This brand comes from GyFTR and would be added again by the next sync. Edit it and switch it to inactive instead.');
     }
     await this.brands.delete(id);
@@ -111,7 +115,7 @@ export class BrandService {
       const existing = await this.brands.findBySlug(parsed.data.slug);
       if (existing && existing.gyftrId !== null) {
         // A GyFTR brand: the fields the CSV changes count as edited by hand, as in the edit form.
-        const manualFields = [...new Set([...existing.manualFields, ...changedSyncedFields(existing, parsed.data)])];
+        const manualFields = [...new Set([...existing.manualFields, ...changedSyncedFields(existing, parsed.data, this.productUrlBase)])];
         await this.brands.update(existing.id, { ...this.withDefaults(parsed.data), manualFields });
         result.updated++;
         continue;
@@ -135,6 +139,7 @@ export class BrandService {
 }
 
 /** The GyFTR-synced fields an editor changed. */
-function changedSyncedFields(before: BrandRecord, after: BrandInput): string[] {
-  return SYNCED_BRAND_FIELDS.filter((field) => before[field] !== after[field]);
+function changedSyncedFields(before: BrandRecord, after: BrandInput, brandPageBase: string): string[] {
+  // The panel's own link for the slug (what an empty link becomes) is not a hand edit: the sync keeps it up to date.
+  return SYNCED_BRAND_FIELDS.filter((field) => before[field] !== after[field] && !(field === 'productUrl' && after.productUrl === `${brandPageBase}/${after.slug}`));
 }

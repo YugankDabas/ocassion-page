@@ -92,9 +92,14 @@ function main() {
         report.databaseError = null;
         report.ready = true;
         logger.info('Database ready');
-        // Catch up on anything a previous container did not finish (a re-render interrupted by a deploy).
-        // Costs nothing when the stored HTML is already current.
-        container.services.publications.refreshAll().catch((err: unknown) => logger.error({ err }, 'Start-up re-render failed'));
+        const services = container.services;
+        // Brands synced from another GyFTR brand API (the API setting changed) are switched off first, so no page shows
+        // them. Then catch up on anything a previous container did not finish (a re-render interrupted by a deploy);
+        // that costs nothing when the stored HTML is already current.
+        services.brandSync
+          .hideOtherSources()
+          .catch((err: unknown) => logger.error({ err }, 'Could not switch off brands from another GyFTR brand API'))
+          .finally(() => services.publications.refreshAll().catch((err: unknown) => logger.error({ err }, 'Start-up re-render failed')));
         return;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

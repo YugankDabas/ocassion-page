@@ -172,6 +172,7 @@ export function brand(partial: Partial<BrandRecord> = {}): BrandRecord {
     minDenomination: 100,
     isActive: true,
     gyftrId: null,
+    gyftrSource: null,
     manualFields: [],
     syncedAt: null,
     createdAt: new Date(),

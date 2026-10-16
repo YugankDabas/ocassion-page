@@ -198,6 +198,8 @@ export interface BrandRecord extends PublicBrand {
   isActive: boolean;
   /** The brand's id at GyFTR (brand API); null for a brand added by hand in the panel. */
   gyftrId: number | null;
+  /** The GyFTR brand API (host) the brand came from; ids are only unique within one API. */
+  gyftrSource: string | null;
   /** Fields changed by hand in the panel; the GyFTR sync leaves them alone. */
   manualFields: string[];
   /** Last time the brand's data came from GyFTR. */
@@ -206,21 +208,26 @@ export interface BrandRecord extends PublicBrand {
   updatedAt: Date;
 }
 
-/** Fields the GyFTR sync keeps up to date (unless changed by hand, see BrandRecord.manualFields). */
-export const SYNCED_BRAND_FIELDS = ['name', 'logoUrl', 'discountPercent', 'redemption', 'isActive'] as const;
+/**
+ * Fields the GyFTR sync keeps up to date (unless changed by hand, see BrandRecord.manualFields). The slug
+ * follows GyFTR's, and the voucher-page link is the GyFTR site's page for that slug.
+ */
+export const SYNCED_BRAND_FIELDS = ['name', 'slug', 'logoUrl', 'productUrl', 'discountPercent', 'redemption', 'isActive'] as const;
 export type SyncedBrandField = (typeof SYNCED_BRAND_FIELDS)[number];
 export type SyncedBrandData = Pick<BrandInput, SyncedBrandField>;
 
 /** What one GyFTR sync writes. */
 export interface BrandSyncWrite {
-  creates: (BrandInput & { gyftrId: number })[];
-  updates: { id: string; data: Partial<SyncedBrandData> & { gyftrId?: number } }[];
+  creates: (BrandInput & { gyftrId: number; gyftrSource: string })[];
+  updates: { id: string; data: Partial<SyncedBrandData> & { gyftrId?: number; gyftrSource?: string } }[];
 }
 
 export interface BrandQuery {
   search?: string;
   category?: string;
   active?: boolean;
+  /** Only brands added by hand or synced from this GyFTR brand API (host); brands from another one are left out. */
+  source?: string;
   page: number;
   pageSize: number;
 }
@@ -229,9 +236,9 @@ export interface IBrandRepository {
   query(q: BrandQuery): Promise<Paginated<BrandRecord>>;
   findById(id: string): Promise<BrandRecord | null>;
   findBySlug(slug: string): Promise<BrandRecord | null>;
-  findManyByIds(ids: string[], opts?: { activeOnly?: boolean }): Promise<BrandRecord[]>;
-  firstActive(limit: number): Promise<BrandRecord[]>;
-  categories(): Promise<string[]>;
+  findManyByIds(ids: string[], opts?: { activeOnly?: boolean; source?: string }): Promise<BrandRecord[]>;
+  firstActive(limit: number, source?: string): Promise<BrandRecord[]>;
+  categories(source?: string): Promise<string[]>;
   create(data: BrandInput): Promise<BrandRecord>;
   update(id: string, data: BrandInput & { manualFields?: string[] }): Promise<BrandRecord>;
   upsertBySlug(data: BrandInput): Promise<{ record: BrandRecord; created: boolean }>;
@@ -242,6 +249,8 @@ export interface IBrandRepository {
   saveSync(write: BrandSyncWrite): Promise<void>;
   /** Changes which fields count as changed by hand. */
   setManualFields(id: string, fields: string[]): Promise<BrandRecord>;
+  /** Switches off the active brands synced from any other GyFTR brand API; returns how many. */
+  deactivateOtherSources(source: string): Promise<number>;
 }
 
 /* ---------- Media ---------- */

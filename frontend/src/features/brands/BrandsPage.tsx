@@ -49,7 +49,7 @@ const FIELD_LABELS: Record<keyof BrandInput, string> = {
   isActive: 'Active',
 };
 /** Fields refreshed from GyFTR on every sync, unless changed by hand. */
-const SYNCED_FIELDS: (keyof BrandInput)[] = ['name', 'logoUrl', 'discountPercent', 'redemption', 'isActive'];
+const SYNCED_FIELDS: (keyof BrandInput)[] = ['name', 'slug', 'logoUrl', 'productUrl', 'discountPercent', 'redemption', 'isActive'];
 const fieldList = (fields: string[]) => fields.map((f) => FIELD_LABELS[f as keyof BrandInput] ?? f).join(', ');
 const when = (iso: string) => new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -236,8 +236,9 @@ function BrandFormModal({ brand, onClose }: { brand: Brand | null; onClose: () =
   const save = useSaveBrand();
   const reset = useResetBrandToGyftr();
   const config = useConfig();
+  /** From GyFTR: kept up to date by the sync, and its slug is GyFTR's (it cannot be changed here). */
   const synced = brand !== null && brand.gyftrId !== null;
-  const gyftrOrigin = config.data ? new URL(config.data.publicBaseUrl).origin : 'https://www.gyftr.com';
+  const gyftrOrigin = config.data?.brandPageBaseUrl ?? 'https://www.gyftr.com';
   const [form, setForm] = useState<BrandInput>(() =>
     brand
       ? {
@@ -341,10 +342,11 @@ function BrandFormModal({ brand, onClose }: { brand: Brand | null; onClose: () =
         <div className="stack">
           {synced && (
             <div className="alert alert-info">
-              This brand comes from GyFTR: its name, logo, discount, redeemable and active status are refreshed every time someone signs in. A field you change
-              here keeps your value and is no longer updated from GyFTR.
+              This brand comes from GyFTR: its name, slug, logo, voucher-page link, discount, redeemable and active status are refreshed every time someone signs
+              in. A field you change here keeps your value and is no longer updated from GyFTR.
             </div>
           )}
+
           {synced && brand.manualFields.length > 0 && (
             <div className="alert alert-warning row" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
               <span>
@@ -446,11 +448,12 @@ function BrandFormModal({ brand, onClose }: { brand: Brand | null; onClose: () =
 
 function ImportModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const imp = useImportBrands();
+  const gyftrOrigin = useConfig().data?.brandPageBaseUrl ?? 'https://www.gyftr.com';
   const [file, setFile] = useState<File | null>(null);
   const result = imp.data;
   const sample =
     'name,slug,productUrl,logoUrl,discountPercent,discountLabel,category,redemption,minDenomination,isActive\n' +
-    'Amazon Pay,amazon,https://www.gyftr.com/amazon,,0.5,,E-Commerce,ONLINE,100,true';
+    `Amazon Pay,amazon,${gyftrOrigin}/amazon,,0.5,,E-Commerce,ONLINE,100,true`;
   const download = () => {
     const url = URL.createObjectURL(new Blob([sample], { type: 'text/csv' }));
     const a = document.createElement('a');
@@ -478,7 +481,7 @@ function ImportModal({ open, onClose }: { open: boolean; onClose: () => void }) 
       <div className="stack">
         <p style={{ margin: 0 }}>
           Brands are matched by <strong>slug</strong>: existing ones are updated, new ones created. Empty <span className="mono">productUrl</span> defaults to
-          gyftr.com/&lt;slug&gt;. Max 2,000 rows.
+          the GyFTR site’s page for the slug ({gyftrOrigin.replace(/^https?:\/\//, '')}/&lt;slug&gt;). Max 2,000 rows.
         </p>
         <p className="muted small" style={{ margin: 0 }}>
           Brands already come from GyFTR. For a GyFTR brand, a name, logo, discount, redeemable or active status the CSV changes counts as edited by hand and is

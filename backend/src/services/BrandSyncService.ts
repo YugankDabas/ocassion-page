@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { GYFTR_ENVIRONMENTS, type GyftrTarget } from '../config/gyftr';
 import type { RedemptionMode } from '../contracts';
 import { ConflictError, NotFoundError } from '../lib/errors';
 import type { Logger } from '../lib/logger';
@@ -6,8 +7,8 @@ import { SYNCED_BRAND_FIELDS, type BrandRecord, type BrandSyncWrite, type IBrand
 import type { Actor, AuditService } from './AuditService';
 import type { IContentChangeNotifier } from './ContentChanges';
 
-/** GyFTR's public brand API. */
-export const GYFTR_API = 'https://api.gyftr.com/gyftrapi/api/v1';
+/** The GyFTR sites a brand card can link to: a link to one of them for the brand's slug was made by the panel. */
+const GYFTR_SITES: readonly string[] = Object.values(GYFTR_ENVIRONMENTS).map((e) => e.brandPageBase);
 
 export interface BrandSyncResult {
   /** Brands listed by GyFTR. */
@@ -97,11 +98,13 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 }
 
 /**
- * Keeps the brand library in step with GyFTR's brand API:
- *   - the list (https://api.gyftr.com/.../home/brand/list) gives every brand: name, slug, logo, visibility;
- *   - each brand's detail (.../brand/detail/:slug) gives its discount (`defaut_pg_dis`) and redemption.
- * Brands are matched on GyFTR's id. A field an editor changed by hand (BrandRecord.manualFields) is
- * never overwritten; category, discount label and voucher-page link are the panel's own.
+ * Keeps the brand library in step with GyFTR's brand API (production or staging, see config/gyftr.ts):
+ *   - the list (…/home/brand/list) gives every brand: id, name, slug, logo, visibility;
+ *   - each brand's detail (…/brand/detail/:slug) gives its discount (`defaut_pg_dis`) and redemption.
+ * A brand's slug follows GyFTR's and its card links to the GyFTR site's page for it (`${brandPageBase}/${slug}`).
+ * Brands from this API are matched on GyFTR's id; every other brand (added by hand, or synced from the other
+ * GyFTR environment, whose ids mean other brands) is matched on its slug. A field an editor changed by hand
+ * (BrandRecord.manualFields) is never overwritten; category and discount label are the panel's own.
  *
  * Runs in the background after each sign-in to the panel and on demand. One sync at a time:
  * a request made while one is running joins it.
@@ -115,7 +118,7 @@ export class BrandSyncService {
     private readonly changes: IContentChangeNotifier,
     private readonly audit: AuditService,
     private readonly logger: Logger,
-    private readonly productUrlBase = 'https://www.gyftr.com',
+    private readonly target: Pick<GyftrTarget, 'apiBase' | 'source' | 'brandPageBase'>,
     private readonly fetchJson: JsonFetcher = defaultFetchJson,
     private readonly concurrency = 6,
   ) {}
@@ -146,13 +149,30 @@ export class BrandSyncService {
     return this.running;
   }
 
+  /**
+   * Switches off, right away, the brands synced from another GyFTR brand API (when the API in the settings changes),
+   * so pages never show them, even before the next sync. Run at start-up.
+   */
+  async hideOtherSources(): Promise<number> {
+    const count = await this.brands.deactivateOtherSources(this.target.source);
+    if (count) {
+      this.changes.changed('brands'); // published pages are re-rendered without them
+      this.logger.info({ count }, 'Brands from another GyFTR brand API switched off');
+    }
+    return count;
+  }
+
   /** Clears a brand's hand-made changes and takes its data from GyFTR again right away. */
   async resetToGyftr(actor: Actor, id: string): Promise<BrandRecord> {
     const brand = await this.brands.findById(id);
     if (!brand) throw new NotFoundError('Brand');
     if (brand.gyftrId === null) throw new ConflictError('This brand was added by hand; it does not come from GyFTR.');
+    if (brand.gyftrSource !== this.target.source) {
+      throw new NotFoundError('Brand');
+    }
     const detail = await this.detail(brand.slug);
     const data: Partial<SyncedBrandData> = {
+      productUrl: this.brandPage(brand.slug),
       ...(detail.name ? { name: detail.name } : {}),
       ...(detail.logoUrl ? { logoUrl: detail.logoUrl } : {}),
       discountPercent: detail.discountPercent,
@@ -188,12 +208,17 @@ export class BrandSyncService {
     );
 
     const existing = await this.brands.all();
-    const byGyftrId = new Map(existing.filter((b) => b.gyftrId !== null).map((b) => [b.gyftrId!, b]));
-    const handMadeBySlug = new Map(existing.filter((b) => b.gyftrId === null).map((b) => [b.slug, b]));
-    const takenSlugs = new Set(existing.map((b) => b.slug));
+    const { source } = this.target;
+    // GyFTR ids only mean something within one API: brands from this API are matched on id, every other brand
+    // (added by hand, or from the other GyFTR environment) on its slug.
+    const ours = new Map(existing.filter((b) => b.gyftrSource === source && b.gyftrId !== null).map((b) => [b.gyftrId!, b]));
+    const othersBySlug = new Map(existing.filter((b) => b.gyftrSource !== source || b.gyftrId === null).map((b) => [b.slug, b]));
+    const startSlugs = new Set(existing.map((b) => b.slug));
+    const slugOwner = new Map(existing.map((b) => [b.slug, b.id])); // slugs are unique: who holds each one after this sync
     const write: BrandSyncWrite = { creates: [], updates: [] };
     const result: BrandSyncResult = { listed: listed.length, created: 0, updated: 0, unchanged: 0, deactivated: 0, detailsFailed };
     const seen = new Set<number>();
+    const listedBrandIds = new Set<string>();
 
     for (const item of listed) {
       if (seen.has(item.id)) continue;
@@ -201,21 +226,27 @@ export class BrandSyncService {
       const detail = details.get(item.id) ?? null;
       const wanted: Partial<SyncedBrandData> = {
         name: (detail?.name || item.brand_name).slice(0, 120),
+        slug: item.slug,
         logoUrl: httpsUrl(item.logo) || detail?.logoUrl || '',
         isActive: item.is_visible !== 0 && item.is_published !== 0,
         ...(detail ? { discountPercent: detail.discountPercent } : {}),
         ...(detail?.redemption ? { redemption: detail.redemption } : {}),
       };
-      const current = byGyftrId.get(item.id) ?? handMadeBySlug.get(item.slug);
+      const current = ours.get(item.id) ?? othersBySlug.get(item.slug);
       if (!current) {
-        if (takenSlugs.has(item.slug)) continue; // the slug belongs to another GyFTR brand already
-        takenSlugs.add(item.slug);
+        // The slug belongs to another brand (or did when the sync started): never two brands with one slug.
+        if (slugOwner.has(item.slug) || startSlugs.has(item.slug)) {
+          this.logger.warn({ slug: item.slug, gyftrId: item.id }, 'GyFTR brand not added: another brand has its slug');
+          continue;
+        }
+        slugOwner.set(item.slug, `new:${item.id}`);
         write.creates.push({
           gyftrId: item.id,
+          gyftrSource: source,
           slug: item.slug,
           name: wanted.name!,
           logoUrl: wanted.logoUrl!,
-          productUrl: `${this.productUrlBase}/${item.slug}`,
+          productUrl: this.brandPage(item.slug),
           discountPercent: wanted.discountPercent ?? null,
           discountLabel: '',
           category: '',
@@ -226,8 +257,26 @@ export class BrandSyncService {
         result.created++;
         continue;
       }
+      listedBrandIds.add(current.id);
+      othersBySlug.delete(current.slug);
       const data = this.changedFields(current, wanted);
-      if (current.gyftrId === null) Object.assign(data, { gyftrId: item.id }); // a brand added by hand before: from now on it comes from GyFTR
+      // A new slug only when no other brand holds it; the link then follows the slug the brand keeps.
+      if (data.slug !== undefined) {
+        const owner = slugOwner.get(data.slug);
+        if (owner !== undefined && owner !== current.id) {
+          this.logger.warn({ slug: data.slug, brand: current.slug }, 'GyFTR slug not taken over: another brand has it');
+          delete data.slug;
+        } else {
+          slugOwner.delete(current.slug);
+          slugOwner.set(data.slug, current.id);
+        }
+      }
+      const link = this.brandPage(data.slug ?? current.slug);
+      if (!current.manualFields.includes('productUrl') && this.isPanelLink(current.productUrl, current.slug) && current.productUrl !== link) {
+        data.productUrl = link;
+      }
+      // From now on it comes from this API.
+      if (current.gyftrSource !== source || current.gyftrId !== item.id) Object.assign(data, { gyftrId: item.id, gyftrSource: source });
       if (Object.keys(data).length) {
         write.updates.push({ id: current.id, data });
         result.updated++;
@@ -236,9 +285,11 @@ export class BrandSyncService {
       }
     }
 
-    // No longer listed by GyFTR: switched off (pages stop showing it), unless an editor decided otherwise.
+    // Not listed by this API: switched off so pages stop showing it, never deleted. A brand this API dropped stays on
+    // if an editor decided so; one from another GyFTR brand API is always switched off. Brands added by hand are left alone.
     for (const brand of existing) {
-      if (brand.gyftrId === null || seen.has(brand.gyftrId) || !brand.isActive || brand.manualFields.includes('isActive')) continue;
+      if (brand.gyftrId === null || listedBrandIds.has(brand.id) || !brand.isActive) continue;
+      if (brand.gyftrSource === source && brand.manualFields.includes('isActive')) continue;
       write.updates.push({ id: brand.id, data: { isActive: false } });
       result.deactivated++;
     }
@@ -247,6 +298,16 @@ export class BrandSyncService {
     if (write.creates.length || write.updates.length) this.changes.changed('brands'); // live pages show the new data
     await this.audit.record(actor, { action: 'brand.sync', entityType: 'brand', entityId: null, metadata: { ...result } });
     return result;
+  }
+
+  /** The brand's page on the GyFTR site this panel follows. */
+  private brandPage(slug: string): string {
+    return `${this.target.brandPageBase}/${slug}`;
+  }
+
+  /** A link the panel made itself (a GyFTR site's page for the slug, or none), as opposed to one an editor typed. */
+  private isPanelLink(url: string, slug: string): boolean {
+    return !url || [...GYFTR_SITES, this.target.brandPageBase].some((site) => url === `${site}/${slug}`);
   }
 
   /** The synced fields whose GyFTR value differs from the brand's, minus those changed by hand. */
@@ -261,7 +322,7 @@ export class BrandSyncService {
   }
 
   private async list(): Promise<ListedBrand[]> {
-    const body = listSchema.safeParse(await this.fetchJson(`${GYFTR_API}/home/brand/list`));
+    const body = listSchema.safeParse(await this.fetchJson(`${this.target.apiBase}/home/brand/list`));
     if (!body.success) throw new Error('GyFTR brand list has an unexpected format');
     const brands: ListedBrand[] = [];
     for (const raw of body.data.data.brands) {
@@ -273,7 +334,7 @@ export class BrandSyncService {
   }
 
   private async detail(slug: string): Promise<BrandDetail> {
-    const body = detailSchema.safeParse(await this.fetchJson(`${GYFTR_API}/brand/detail/${encodeURIComponent(slug)}`));
+    const body = detailSchema.safeParse(await this.fetchJson(`${this.target.apiBase}/brand/detail/${encodeURIComponent(slug)}`));
     if (!body.success) throw new Error(`GyFTR detail for "${slug}" has an unexpected format`);
     const b = body.data.data.brand;
     const discount = Number(b.defaut_pg_dis);

@@ -134,6 +134,8 @@ variables on the ECS task definition and reads everything else from one Secrets 
 | `S3_BUCKET` | Name of the media bucket | Uploaded images, in the bucket's folder `occasion-pages/` only (the bucket can be shared and stays private). This API serves them at `https://<api-host>/media/...`; the task role needs `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` on `<bucket>/occasion-pages/*`. |
 | `MEDIA_BASE_URL` | not set | Optional. Serve the images from this address instead, e.g. CloudFront in front of the bucket (production). |
 | `TECH_READER_PASSWORD` | `openssl rand -base64 24` | Optional. Password of the read-only database login for the gyftr.com tech team (`tech_reader`), created at start-up. |
+| `GYFTR_API_URL` | staging `https://gyftrapi.gyftr.net/gyftrapi/api/v1`, production `https://api.gyftr.com/gyftrapi/api/v1` | GyFTR brand API the brand library syncs from (`…/home/brand/list`, `…/brand/detail/:slug`). |
+| `GYFTR_BRAND_PAGE_BASE_URL` | staging `https://www.gvhelpdesk.net`, production `https://www.gyftr.com` | Brand cards link to `<this>/<slug>`. If either GyFTR key is left out, it is chosen from `ADMIN_FRONTEND_ORIGIN` (a panel on `*.gyftr.net` follows staging, any other production). Changing them takes effect on the next start: brands from the previous API are switched off and no longer listed in the panel, and the next sync takes brands over by slug. |
 
 Keys the application does not know are ignored, so the secret can hold other things too.
 

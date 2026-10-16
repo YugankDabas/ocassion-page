@@ -45,6 +45,16 @@ const settings = z.object({
   /** Public base URL the pages are served under, e.g. https://www.gyftr.com/occasion */
   PAGE_PUBLIC_BASE_URL: z.string().url(),
 
+  /**
+   * The GyFTR the brand library follows (config/gyftr.ts): its brand API, e.g.
+   * https://gyftrapi.gyftr.net/gyftrapi/api/v1 (staging) or https://api.gyftr.com/gyftrapi/api/v1 (production),
+   * and the site brand cards link to (<base>/<slug>), e.g. https://www.gvhelpdesk.net or https://www.gyftr.com.
+   * Set in .env locally and in the Secrets Manager secret when deployed. If one is not set, it is chosen from
+   * ADMIN_FRONTEND_ORIGIN: a panel on *.gyftr.net or localhost follows staging, any other production.
+   */
+  GYFTR_API_URL: z.string().trim().url().optional(),
+  GYFTR_BRAND_PAGE_BASE_URL: z.string().trim().url().optional(),
+
   /** Directory of the built admin panel, served by this API (set by the deployment). */
   SERVE_FRONTEND_DIR: z.string().optional(),
 
