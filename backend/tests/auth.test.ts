@@ -3,7 +3,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { PERMISSIONS, can, type Permission } from '../src/contracts';
 import { requireOwnPassword } from '../src/http/middleware';
-import { BadRequestError, ForbiddenError, UnauthorizedError, ValidationError } from '../src/lib/errors';
+import { BadRequestError, ConflictError, ForbiddenError, UnauthorizedError, ValidationError } from '../src/lib/errors';
 import type { IUserRepository, UserRecord } from '../src/repositories/types';
 import { AuditService } from '../src/services/AuditService';
 import { AuthService } from '../src/services/AuthService';
@@ -124,6 +124,28 @@ describe('invite-only users', () => {
 
     await expect(service.update(actor, admin.id, { role: 'EDITOR' })).rejects.toBeInstanceOf(BadRequestError);
     expect((await service.update(actor, admin.id, { name: 'Me', role: 'ADMIN' })).name).toBe('Me'); // same access: fine
+  });
+
+  it('an admin can change the email of a person: they are signed out and sign in with the new one; addresses stay unique', async () => {
+    const { users, auth, service } = setup();
+    const admin = await users.create({ email: 'admin@gyftr.net', name: 'Admin', role: 'ADMIN', passwordHash: await hasher.hash('admin-password-123'), mustChangePassword: false });
+    const actor = { id: admin.id, ip: null };
+    const person = await service.create(actor, { email: 'old@gyftr.net', name: 'Person', role: 'EDITOR', password: 'temporary-pass-123' });
+    const version = async (id: string) => (await users.findById(id))!.tokenVersion;
+
+    const before = await version(person.id);
+    expect((await service.update(actor, person.id, { email: '  New@GyFTR.net ' })).email).toBe('new@gyftr.net');
+    expect(await version(person.id)).toBe(before + 1); // signed out everywhere
+    await expect(auth.login('old@gyftr.net', 'temporary-pass-123', null)).rejects.toBeInstanceOf(UnauthorizedError);
+    expect((await auth.login('new@gyftr.net', 'temporary-pass-123', null)).user.email).toBe('new@gyftr.net');
+
+    await expect(service.update(actor, person.id, { email: 'admin@gyftr.net' })).rejects.toBeInstanceOf(ConflictError); // taken
+    await service.update(actor, person.id, { email: 'new@gyftr.net', name: 'Same email' }); // unchanged: not signed out
+    expect(await version(person.id)).toBe(before + 1);
+
+    const mine = await version(admin.id);
+    expect((await service.update(actor, admin.id, { email: 'me@gyftr.net' })).email).toBe('me@gyftr.net');
+    expect(await version(admin.id)).toBe(mine); // your own email: you stay signed in
   });
 });
 

@@ -59,6 +59,8 @@ export const createUserInputSchema = z.object({
 
 export const updateUserInputSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
+  /** The sign-in address. Changing someone else's signs them out; they sign in with the new one. */
+  email: z.string().trim().toLowerCase().email().max(200).optional(),
   role: z.enum(ROLES).optional(),
   isActive: z.boolean().optional(),
   password: passwordSchema.optional(),

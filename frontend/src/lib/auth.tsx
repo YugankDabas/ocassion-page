@@ -9,6 +9,8 @@ interface AuthState {
   login(email: string, password: string): Promise<void>;
   logout(): Promise<void>;
   can(permission: Permission): boolean;
+  /** Reloads the signed-in user's details (e.g. after changing your own name or email). */
+  refresh(): Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -55,6 +57,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async logout() {
         await api.post('/auth/logout').catch(() => undefined);
         clear();
+      },
+      async refresh() {
+        const s = await api.get<SessionResponse>('/auth/me');
+        api.setCsrfToken(s.csrfToken);
+        setUser(s.user);
       },
       can: (permission) => (user ? can(user.role, permission) : false),
     }),

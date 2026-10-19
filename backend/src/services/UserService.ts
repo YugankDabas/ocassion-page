@@ -42,7 +42,7 @@ export class UserService {
   async update(
     actor: Actor,
     userId: string,
-    input: { name?: string; role?: Role; isActive?: boolean; password?: string },
+    input: { name?: string; email?: string; role?: Role; isActive?: boolean; password?: string },
   ): Promise<UserView> {
     const existing = await this.users.findById(userId);
     if (!existing) throw new NotFoundError('User');
@@ -55,11 +55,19 @@ export class UserService {
     if (actor.id === userId && input.isActive === false) throw new BadRequestError('You cannot deactivate yourself');
     const roleChanges = input.role !== undefined && input.role !== existing.role;
     if (actor.id === userId && roleChanges) throw new BadRequestError('You cannot change your own access; ask another admin');
+    const email = input.email?.trim().toLowerCase();
+    const emailChanges = email !== undefined && email !== existing.email.toLowerCase();
+    if (emailChanges) {
+      const other = await this.users.findByEmail(email);
+      if (other && other.id !== userId) throw new ConflictError('A user with this email already exists');
+    }
 
-    // Signed out everywhere only when access really changes (not when the same role is sent back with a new name).
-    const securityChange = input.password !== undefined || roleChanges || input.isActive === false;
+    // Signed out everywhere only when access really changes (not when the same values are sent back with a new name).
+    // A new email for someone else signs them out too: they sign in with the new address. Your own does not.
+    const securityChange = input.password !== undefined || roleChanges || input.isActive === false || (emailChanges && actor.id !== userId);
     const user = await this.users.update(userId, {
       ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(emailChanges ? { email } : {}),
       ...(input.role !== undefined ? { role: input.role } : {}),
       ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
       // A password set for someone else is temporary: they must replace it at their next sign-in.
@@ -70,7 +78,11 @@ export class UserService {
       action: 'user.update',
       entityType: 'user',
       entityId: userId,
-      metadata: { fields: Object.keys(input).filter((k) => k !== 'password'), passwordReset: input.password !== undefined },
+      metadata: {
+        fields: Object.keys(input).filter((k) => k !== 'password'),
+        passwordReset: input.password !== undefined,
+        ...(emailChanges ? { emailFrom: existing.email, emailTo: email } : {}),
+      },
     });
     return toView(user);
   }

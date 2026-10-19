@@ -58,7 +58,8 @@ diwali-gifts-admin/
 - **Access** – when adding a person, the admin picks one of three: **Edit only** (pages, brands, images, templates),
   **Edit & publish** (also publish, unpublish, archive) or **Admin** (everything, plus users, occasions, header &
   footer, deleting pages and the audit log). Stored as `EDITOR`, `PUBLISHER`, `ADMIN`. Nobody can change their own
-  access, and saving a person signs them out only when their access really changes. Users are invite-only.
+  access, and saving a person signs them out only when their access really changes. An admin can change a person's
+  name, email (unique; they are signed out and sign in with the new one), access and password. Users are invite-only.
 
 ## Integration with gyftr.com (database contract)
 

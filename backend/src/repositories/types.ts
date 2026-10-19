@@ -33,7 +33,7 @@ export interface IUserRepository {
   create(data: { email: string; name: string; role: Role; passwordHash: string; mustChangePassword: boolean }): Promise<UserRecord>;
   update(
     id: string,
-    data: Partial<Pick<UserRecord, 'name' | 'role' | 'isActive' | 'passwordHash' | 'mustChangePassword'>> & { bumpTokenVersion?: boolean },
+    data: Partial<Pick<UserRecord, 'name' | 'email' | 'role' | 'isActive' | 'passwordHash' | 'mustChangePassword'>> & { bumpTokenVersion?: boolean },
   ): Promise<UserRecord>;
   touchLogin(id: string): Promise<void>;
   countActiveAdmins(): Promise<number>;

@@ -38,12 +38,12 @@ export class PrismaUserRepository implements IUserRepository {
 
   update(
     id: string,
-    data: Partial<Pick<UserRecord, 'name' | 'role' | 'isActive' | 'passwordHash' | 'mustChangePassword'>> & { bumpTokenVersion?: boolean },
+    data: Partial<Pick<UserRecord, 'name' | 'email' | 'role' | 'isActive' | 'passwordHash' | 'mustChangePassword'>> & { bumpTokenVersion?: boolean },
   ): Promise<UserRecord> {
     const { bumpTokenVersion, ...rest } = data;
     return this.db.user.update({
       where: { id },
-      data: { ...rest, ...(bumpTokenVersion ? { tokenVersion: { increment: 1 } } : {}) },
+      data: { ...rest, ...(rest.email !== undefined ? { email: rest.email.toLowerCase() } : {}), ...(bumpTokenVersion ? { tokenVersion: { increment: 1 } } : {}) },
     });
   }
 

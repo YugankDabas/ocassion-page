@@ -85,7 +85,7 @@ function UserModal({ user, onClose }: { user: User | null; onClose: () => void }
   const [name, setName] = useState(user?.name ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
   const [role, setRole] = useState<Role>(user?.role ?? 'EDITOR');
-  const { user: me } = useAuth();
+  const { user: me, refresh } = useAuth();
   const isMe = user !== null && user.id === me?.id;
   const [isActive, setIsActive] = useState(user?.isActive ?? true);
   const [password, setPassword] = useState('');
@@ -93,10 +93,18 @@ function UserModal({ user, onClose }: { user: User | null; onClose: () => void }
   const submit = async () => {
     try {
       const input = user
-        ? { name, role, isActive, ...(password ? { password } : {}) }
+        ? { name, email, role, isActive, ...(password ? { password } : {}) }
         : { name, email, role, password };
       await save.mutateAsync({ id: user?.id, input });
-      toast.success(user ? 'User updated' : 'User invited. Share the temporary password securely; they must change it at first sign-in.');
+      if (isMe) await refresh().catch(() => undefined); // the sidebar shows your new name / email
+      const newEmail = user !== null && email.trim().toLowerCase() !== user.email.toLowerCase();
+      toast.success(
+        !user
+          ? 'User invited. Share the temporary password securely; they must change it at first sign-in.'
+          : newEmail && !isMe
+            ? `User updated. They now sign in with ${email.trim().toLowerCase()}.`
+            : 'User updated',
+      );
       onClose();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -122,7 +130,14 @@ function UserModal({ user, onClose }: { user: User | null; onClose: () => void }
     >
       <div className="stack">
         <TextInput label="Name" value={name} onChange={setName} maxLength={120} />
-        {!user && <TextInput label="Email" type="email" value={email} onChange={setEmail} />}
+        <TextInput
+          label="Email"
+          type="email"
+          value={email}
+          maxLength={200}
+          onChange={setEmail}
+          hint={user && !isMe ? 'The address they sign in with. Changing it signs them out; they then sign in with the new one.' : user ? 'The address you sign in with.' : undefined}
+        />
         <AccessChoice value={role} onChange={setRole} disabled={isMe} />
         <PasswordInput
           label={user ? 'Reset password (optional)' : 'Temporary password'}
