@@ -53,8 +53,11 @@ export class UserService {
       throw new BadRequestError('At least one active admin is required');
     }
     if (actor.id === userId && input.isActive === false) throw new BadRequestError('You cannot deactivate yourself');
+    const roleChanges = input.role !== undefined && input.role !== existing.role;
+    if (actor.id === userId && roleChanges) throw new BadRequestError('You cannot change your own access; ask another admin');
 
-    const securityChange = input.password !== undefined || input.role !== undefined || input.isActive === false;
+    // Signed out everywhere only when access really changes (not when the same role is sent back with a new name).
+    const securityChange = input.password !== undefined || roleChanges || input.isActive === false;
     const user = await this.users.update(userId, {
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.role !== undefined ? { role: input.role } : {}),

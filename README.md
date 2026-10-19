@@ -55,7 +55,10 @@ diwali-gifts-admin/
   "Use GyFTR data again". Brands added by hand and CSV import still work.
 - **Media library** – uploads are re-encoded to WebP, stripped of metadata and resized. Stored in S3 when deployed.
 - **Workflow** – drafts vs published, optimistic locking, version history with restore, templates, audit log.
-- **Roles** – `ADMIN`, `PUBLISHER` (publish, brands, templates), `EDITOR` (drafts and media). Users are invite-only.
+- **Access** – when adding a person, the admin picks one of three: **Edit only** (pages, brands, images, templates),
+  **Edit & publish** (also publish, unpublish, archive) or **Admin** (everything, plus users, occasions, header &
+  footer, deleting pages and the audit log). Stored as `EDITOR`, `PUBLISHER`, `ADMIN`. Nobody can change their own
+  access, and saving a person signs them out only when their access really changes. Users are invite-only.
 
 ## Integration with gyftr.com (database contract)
 

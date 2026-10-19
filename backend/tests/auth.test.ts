@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { PERMISSIONS, can, type Permission } from '../src/contracts';
 import { requireOwnPassword } from '../src/http/middleware';
-import { ForbiddenError, UnauthorizedError, ValidationError } from '../src/lib/errors';
+import { BadRequestError, ForbiddenError, UnauthorizedError, ValidationError } from '../src/lib/errors';
 import type { IUserRepository, UserRecord } from '../src/repositories/types';
 import { AuditService } from '../src/services/AuditService';
 import { AuthService } from '../src/services/AuthService';
@@ -107,5 +108,32 @@ describe('invite-only users', () => {
     expect((await service.update(actor, admin.id, { password: 'admin-new-pass-123' })).mustChangePassword).toBe(false);
     // Editing other fields does not touch the flag.
     expect((await service.update(actor, invited.id, { name: 'Renamed' })).mustChangePassword).toBe(true);
+  });
+  it('saving a person signs them out only when their access really changes; nobody changes their own access', async () => {
+    const { users, service } = setup();
+    const admin = await users.create({ email: 'admin@gyftr.net', name: 'Admin', role: 'ADMIN', passwordHash: await hasher.hash('admin-password-123'), mustChangePassword: false });
+    const actor = { id: admin.id, ip: null };
+    const editor = await service.create(actor, { email: 'editor@gyftr.net', name: 'Editor', role: 'EDITOR', password: 'temporary-pass-123' });
+    const version = async () => (await users.findById(editor.id))!.tokenVersion;
+
+    const before = await version();
+    await service.update(actor, editor.id, { name: 'Renamed', role: 'EDITOR' }); // the panel sends the role back unchanged
+    expect(await version()).toBe(before);
+    await service.update(actor, editor.id, { role: 'PUBLISHER' }); // access changed: signed out everywhere
+    expect(await version()).toBe(before + 1);
+
+    await expect(service.update(actor, admin.id, { role: 'EDITOR' })).rejects.toBeInstanceOf(BadRequestError);
+    expect((await service.update(actor, admin.id, { name: 'Me', role: 'ADMIN' })).name).toBe('Me'); // same access: fine
+  });
+});
+
+describe('access: Edit only, Edit & publish, Admin', () => {
+  it('everyone has every right except the admin ones; publishing needs "can publish"', () => {
+    const adminOnly: Permission[] = ['pages.delete', 'settings.write', 'users.manage', 'audit.read'];
+    for (const permission of Object.keys(PERMISSIONS) as Permission[]) {
+      expect(can('ADMIN', permission)).toBe(true);
+      expect(can('PUBLISHER', permission)).toBe(!adminOnly.includes(permission));
+      expect(can('EDITOR', permission)).toBe(!adminOnly.includes(permission) && permission !== 'pages.publish');
+    }
   });
 });

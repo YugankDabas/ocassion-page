@@ -1,7 +1,7 @@
 import { ForcePasswordChangePage } from '../features/auth/ForcePasswordChangePage';
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router';
 import logoWhite from '../assets/gyftr-logo-white.png';
-import type { Permission } from '../contracts';
+import { ROLE_LABELS, type Permission } from '../contracts';
 import { useAuth } from '../lib/auth';
 import { useBrandSync } from '../lib/queries';
 import { Spinner } from './ui';
@@ -48,7 +48,7 @@ export function ProtectedLayout() {
         <div className="sidebar-footer">
           <strong>{user.name}</strong>
           <span>
-            {user.email} · {user.role.toLowerCase()}
+            {user.email} · {ROLE_LABELS[user.role].toLowerCase()}
           </span>
           <div className="row">
             <NavLink to="/account">Account</NavLink>

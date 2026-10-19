@@ -1,3 +1,4 @@
+import { ROLE_LABELS } from '../../contracts';
 import { Button, PageHeader } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -13,7 +14,7 @@ export function AccountPage() {
 
   return (
     <>
-      <PageHeader title="Your account" description={`${user?.name} · ${user?.email} · ${user?.role.toLowerCase()}`} />
+      <PageHeader title="Your account" description={`${user?.name} · ${user?.email} · ${user ? ROLE_LABELS[user.role].toLowerCase() : ''}`} />
       <div className="card card-body stack" style={{ maxWidth: 480 }}>
         <h2>Change password</h2>
         <ChangePasswordForm />

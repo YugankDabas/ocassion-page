@@ -319,3 +319,14 @@ a.icon-btn { text-decoration: none; }
 
 /* A text button that reads like a link (e.g. "Use your own image instead"). */
 .link-btn { align-self: flex-start; border: 0; background: none; padding: 0; color: var(--primary); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+
+/* Access level when adding / editing a person: three cards, one chosen. */
+.access-choice { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; min-width: 0; }
+.access-choice legend { padding: 0; margin-bottom: 6px; }
+.access-option { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; background: var(--surface); transition: border-color .15s, background .15s; }
+.access-option:hover { border-color: var(--primary); }
+.access-option.on { border-color: var(--primary); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--primary); }
+.access-option input { margin: 3px 0 0; accent-color: var(--primary); flex: none; }
+.access-option span { display: grid; gap: 2px; }
+.access-option small { color: var(--muted); font-size: 13px; line-height: 1.4; }
+.access-choice:disabled .access-option { cursor: not-allowed; opacity: 0.65; }

@@ -1,7 +1,21 @@
 import { z } from 'zod';
 
+/**
+ * A person's access, chosen when an admin adds them: Edit only (EDITOR), Edit & publish (PUBLISHER) or Admin.
+ * Everyone can edit everything that is not admin-only (pages, brands, media, templates); only publishing
+ * differs between EDITOR and PUBLISHER.
+ */
 export const ROLES = ['ADMIN', 'PUBLISHER', 'EDITOR'] as const;
 export type Role = (typeof ROLES)[number];
+
+export const ROLE_LABELS: Record<Role, string> = { ADMIN: 'Admin', PUBLISHER: 'Edit & publish', EDITOR: 'Edit only' };
+
+/** What each access level means, as the panel explains it when adding a person. */
+export const ROLE_DESCRIPTIONS: Record<Role, string> = {
+  EDITOR: 'Edit pages, brands, images and templates. Cannot publish.',
+  PUBLISHER: 'Everything in Edit only, plus publish, unpublish and archive pages.',
+  ADMIN: 'Everything, plus users, occasions, header & footer, deleting pages and the audit log.',
+};
 
 /** What each role may do. Kept here so the API and the UI agree. */
 export const PERMISSIONS = {
@@ -9,10 +23,10 @@ export const PERMISSIONS = {
   'pages.write': ['ADMIN', 'PUBLISHER', 'EDITOR'],
   'pages.publish': ['ADMIN', 'PUBLISHER'],
   'pages.delete': ['ADMIN'],
-  'brands.write': ['ADMIN', 'PUBLISHER'],
+  'brands.write': ['ADMIN', 'PUBLISHER', 'EDITOR'],
   'media.write': ['ADMIN', 'PUBLISHER', 'EDITOR'],
-  'media.delete': ['ADMIN', 'PUBLISHER'],
-  'templates.write': ['ADMIN', 'PUBLISHER'],
+  'media.delete': ['ADMIN', 'PUBLISHER', 'EDITOR'],
+  'templates.write': ['ADMIN', 'PUBLISHER', 'EDITOR'],
   'settings.write': ['ADMIN'],
   'users.manage': ['ADMIN'],
   'audit.read': ['ADMIN'],

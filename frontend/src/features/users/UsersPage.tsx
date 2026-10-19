@@ -1,17 +1,11 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { ROLES, type Role } from '../../contracts';
-import { Badge, Button, Modal, PageHeader, PasswordInput, Select, Spinner, TextInput, Toggle, formatDate } from '../../components/ui';
+import { ROLE_DESCRIPTIONS, ROLE_LABELS, type Role } from '../../contracts';
+import { Badge, Button, Modal, PageHeader, PasswordInput, Spinner, TextInput, Toggle, formatDate } from '../../components/ui';
 import { errorMessage } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { useSaveUser, useUsers } from '../../lib/queries';
 import type { User } from '../../lib/types';
-
-const ROLE_HELP: Record<Role, string> = {
-  ADMIN: 'Everything, incl. users, occasions and header/footer',
-  PUBLISHER: 'Edit & publish pages, manage brands and templates',
-  EDITOR: 'Edit drafts and upload media (cannot publish)',
-};
 
 export function UsersPage() {
   const users = useUsers();
@@ -28,7 +22,7 @@ export function UsersPage() {
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Role</th>
+                <th>Access</th>
                 <th>Status</th>
                 <th>Last sign-in</th>
                 <th />
@@ -41,7 +35,9 @@ export function UsersPage() {
                     <strong>{u.name}</strong> {u.id === me?.id && <Badge tone="info">you</Badge>}
                     <div className="muted small">{u.email}</div>
                   </td>
-                  <td>{u.role.toLowerCase()}</td>
+                  <td>
+                    <Badge tone={ROLE_TONE[u.role]}>{ROLE_LABELS[u.role]}</Badge>
+                  </td>
                   <td>{u.isActive ? <Badge tone="success">active</Badge> : <Badge tone="danger">disabled</Badge>}</td>
                   <td>{formatDate(u.lastLoginAt)}</td>
                   <td className="actions">
@@ -60,11 +56,37 @@ export function UsersPage() {
   );
 }
 
+/** Badge colour per access level. */
+const ROLE_TONE: Record<Role, 'neutral' | 'success' | 'info'> = { EDITOR: 'neutral', PUBLISHER: 'success', ADMIN: 'info' };
+/** From least to most access. */
+const ACCESS_LEVELS: Role[] = ['EDITOR', 'PUBLISHER', 'ADMIN'];
+
+/** One choice of three, each saying exactly what the person can do. */
+function AccessChoice({ value, onChange, disabled }: { value: Role; onChange: (role: Role) => void; disabled: boolean }) {
+  return (
+    <fieldset className="access-choice" disabled={disabled}>
+      <legend className="field-label">What can this person do?</legend>
+      {ACCESS_LEVELS.map((role) => (
+        <label key={role} className={`access-option ${value === role ? 'on' : ''}`}>
+          <input type="radio" name="access" value={role} checked={value === role} onChange={() => onChange(role)} />
+          <span>
+            <strong>{ROLE_LABELS[role]}</strong>
+            <small>{ROLE_DESCRIPTIONS[role]}</small>
+          </span>
+        </label>
+      ))}
+      {disabled && <p className="field-hint">You cannot change your own access. Another admin can.</p>}
+    </fieldset>
+  );
+}
+
 function UserModal({ user, onClose }: { user: User | null; onClose: () => void }) {
   const save = useSaveUser();
   const [name, setName] = useState(user?.name ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
   const [role, setRole] = useState<Role>(user?.role ?? 'EDITOR');
+  const { user: me } = useAuth();
+  const isMe = user !== null && user.id === me?.id;
   const [isActive, setIsActive] = useState(user?.isActive ?? true);
   const [password, setPassword] = useState('');
 
@@ -101,7 +123,7 @@ function UserModal({ user, onClose }: { user: User | null; onClose: () => void }
       <div className="stack">
         <TextInput label="Name" value={name} onChange={setName} maxLength={120} />
         {!user && <TextInput label="Email" type="email" value={email} onChange={setEmail} />}
-        <Select label="Role" value={role} onChange={setRole} options={ROLES.map((r) => ({ value: r, label: r.toLowerCase() }))} hint={ROLE_HELP[role]} />
+        <AccessChoice value={role} onChange={setRole} disabled={isMe} />
         <PasswordInput
           label={user ? 'Reset password (optional)' : 'Temporary password'}
           autoComplete="new-password"

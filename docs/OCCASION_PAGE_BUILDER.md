@@ -140,7 +140,7 @@ Images are **not** stored in the database. They are in S3; the database holds th
 
 | Table | What it stores | Important fields |
 | --- | --- | --- |
-| `User` | People who can log in to the panel | `email` (unique), `passwordHash` (bcrypt), `role` (ADMIN / PUBLISHER / EDITOR), `isActive`, `mustChangePassword` (password was given by someone else; must be changed at next sign-in), `tokenVersion` (bump = all sessions revoked), `lastLoginAt` |
+| `User` | People who can log in to the panel | `email` (unique), `passwordHash` (bcrypt), `role` (EDITOR = Edit only / PUBLISHER = Edit & publish / ADMIN), `isActive`, `mustChangePassword` (password was given by someone else; must be changed at next sign-in), `tokenVersion` (bump = all sessions revoked), `lastLoginAt` |
 | `Occasion` | The occasions (Diwali, Holi, …) | `slug`, `name`, `shortName`, `recipients`, `emoji` (used in template text), `pageUrl`, `theme` (default colours), `sortOrder`, `isActive` |
 | `Page` | One page being built | `slug`, `title`, `occasionId`, `status` (DRAFT / PUBLISHED / ARCHIVED), `draft` (JSON being edited), `draftVersion` (optimistic lock), `published` (JSON snapshot taken at publish), `publishedSlug`, `publishedVersion`, `publishedAt`, who created / updated / published |
 | `PageRevision` | History, for restore | `pageId`, `version`, `kind` (SAVE / PUBLISH / RESTORE), `content`, `note` |
@@ -453,7 +453,9 @@ allow-list) is what protects that window.
 - Preview pages are served sandboxed: no access to the panel, its cookies or the API.
 - No endpoint is exposed for gyftr.com; it reads the published pages with a read-only database login.
 
-Roles: `ADMIN` (everything, including users), `PUBLISHER` (publish, brands, templates), `EDITOR` (drafts and media).
+Access, chosen per person: **Edit only** (`EDITOR`: pages, brands, images, templates), **Edit & publish** (`PUBLISHER`:
+also publish, unpublish, archive) or **Admin** (`ADMIN`: everything, plus users, occasions, header & footer, deleting
+pages, audit log). Nobody can change their own access.
 
 ## 11. Questions a reviewer may ask
 
