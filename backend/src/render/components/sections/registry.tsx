@@ -19,6 +19,7 @@ const REGISTRY: { [T in SectionType]: S.SectionComponent<T> } = {
   faq: S.FaqSection,
   terms: S.TermsSection,
   cta: S.CtaSection,
+  buttons: S.ButtonsSection,
 };
 
 export function SectionRenderer({ sections, ctx }: { sections: Section[]; ctx: Omit<S.RenderContext, 'index' | 'featured'> }) {

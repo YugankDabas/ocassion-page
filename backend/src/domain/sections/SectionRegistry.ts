@@ -50,6 +50,7 @@ export class SectionRegistry {
       .register(new H.RichTextSectionHandler(html))
       .register(new H.FaqSectionHandler(html))
       .register(new H.TermsSectionHandler(html))
-      .register(new H.CtaSectionHandler(html));
+      .register(new H.CtaSectionHandler(html))
+      .register(new H.ButtonsSectionHandler(html));
   }
 }

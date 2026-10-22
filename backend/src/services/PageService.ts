@@ -1,4 +1,5 @@
 import {
+  heroSizeMismatches,
   pageContentSchema,
   type CreatePageInput,
   type PageContent,
@@ -11,6 +12,7 @@ import type { ITemplateFactory } from '../domain/templates/TemplateFactory';
 import { BadRequestError, ConflictError, NotFoundError, ValidationError } from '../lib/errors';
 import type {
   IBrandRepository,
+  IMediaRepository,
   IOccasionRepository,
   IPageRepository,
   ITemplateRepository,
@@ -47,6 +49,8 @@ export class PageService {
     private readonly templateFactory: ITemplateFactory,
     private readonly audit: AuditService,
     private readonly urls: PageUrlPolicy,
+    /** Real sizes of library images, to check banner sizes on publish. */
+    private readonly media?: Pick<IMediaRepository, 'findSizesByUrls'>,
   ) {}
 
   async list(filter: { status?: PageStatus; occasionId?: string; search?: string }) {
@@ -225,7 +229,31 @@ export class PageService {
       const missing = brandIds.length - found.length;
       if (missing > 0) problems.push(`${missing} referenced brand(s) no longer exist — remove them from the page`);
     }
+    problems.push(...(await this.bannerSizeProblems(content)));
     if (problems.length) throw new ValidationError('Page cannot be published yet', { problems });
+  }
+
+  /**
+   * Every hero banner image must be the banner size set in its section. A library image is judged by its real size
+   * (whatever the browser sent); an image from elsewhere by the size the panel measured when it was set.
+   */
+  private async bannerSizeProblems(content: PageContent): Promise<string[]> {
+    const heroes = content.sections.flatMap((s) => (s.type === 'hero' && s.visible ? [s] : []));
+    const urls = heroes.flatMap((s) => s.props.slides.flatMap((sl) => [sl.desktopImage.url, sl.mobileImage.url])).filter(Boolean);
+    const real = new Map((await this.media?.findSizesByUrls([...new Set(urls)]))?.map((m) => [m.url, m] as const) ?? []);
+    const withRealSize = <T extends { url: string; width?: number; height?: number }>(image: T): T => {
+      const m = real.get(image.url);
+      return m ? { ...image, width: m.width, height: m.height } : image;
+    };
+    return heroes.flatMap((s) =>
+      heroSizeMismatches({
+        ...s.props,
+        slides: s.props.slides.map((sl) => ({ desktopImage: withRealSize(sl.desktopImage), mobileImage: withRealSize(sl.mobileImage) })),
+      }).map(
+        (m) =>
+          `${s.name || 'Hero banner'}, slide ${m.slide}: the ${m.device} banner is ${m.width}×${m.height} px but the ${m.device} banner size is ${m.expected.width}×${m.expected.height} px. Choose a ${m.expected.width}×${m.expected.height} px image, or set a custom size of ${m.width}×${m.height} px.`,
+      ),
+    );
   }
 
   private async assertSlugAvailable(slug: string, exceptPageId?: string): Promise<void> {

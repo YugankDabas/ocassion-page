@@ -76,7 +76,6 @@ function SectionRow({
       <button type="button" className="drag-handle" aria-label={`Drag to reorder ${title}`} {...s.handleProps} onClick={(e) => e.stopPropagation()}>
         ⠿
       </button>
-      <span aria-hidden>{def.icon}</span>
       <span className="label">
         <strong>
           {title} {invalid && <span title="Has errors" style={{ color: 'var(--danger)' }}>●</span>}{' '}
@@ -120,9 +119,6 @@ export function AddSectionModal({ open, onClose, onAdd }: { open: boolean; onClo
                 onClose();
               }}
             >
-              <span aria-hidden style={{ fontSize: 20 }}>
-                {def.icon}
-              </span>
               <strong>{def.label}</strong>
               <span>{def.description}</span>
             </button>

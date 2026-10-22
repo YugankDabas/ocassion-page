@@ -52,7 +52,7 @@ export const THEME_PRESETS = {
     background: '#F7F7F5', surface: '#FFFFFF', text: '#111827', mutedText: '#4B5563',
     headingFont: 'poppins', pattern: 'none', corners: 'soft', motif: 'auto',
   },
-} as const satisfies Record<string, Theme>;
+} as const satisfies Record<string, Omit<Theme, 'backgroundImage' | 'backgroundFit'>>;
 
 export type ThemePreset = keyof typeof THEME_PRESETS;
 

@@ -42,6 +42,17 @@ diwali-gifts-admin/
   Every icon and decoration a section draws is set in that section's "Icons & decorations" group: another
   built-in icon, your own image, or none (heading icons, button arrows, open / close toggles, the discount
   icon, numbers, ornaments, medallions, artwork). The defaults are what the pages always showed.
+  Also per section: the heading tag, chosen next to the Heading field (H2–H6, H1 only in the hero banner; it also sets
+  the size, from H1 largest to H6 at 16px; "Default" keeps the section's own look), its own background (colour / image), and
+  card looks (highlights: style, alignment, animation; brand cards: style, size, corners), and the colours of each part
+  (fill, border, text / icon; Default keeps the page's look): brand lists (card, logo box, details, discount pill, card
+  button, badge, arrows, search & filter bar, search box, filters, tab bar and tabs), highlights cards and FAQ boxes. Brand lists show rows or one
+  row scrolling sideways, with editable arrows that appear only when there is more to scroll. Hero banners take any
+  number of buttons, a text / button position, an image size chosen in the panel (the image is shown in exactly that
+  shape, never cropped), and can have no illustration or band. Only images of exactly that size are taken (picked,
+  uploaded or pasted); another size needs a custom size made for it, and publishing checks every banner against the
+  real size of the library image. Pages saved before take the size of their first banner image. A Buttons section places buttons anywhere. The page
+  can have its own background image (Page settings → Theme).
 - **Built-in artwork** – 19 occasion illustrations drawn in code; any slide can use an uploaded creative instead.
 - **Live preview** – rendered by the same renderer as the published HTML.
 - **Publish** – renders embeddable HTML: classes prefixed, styles scoped, fonts embedded, images on S3 / CDN.

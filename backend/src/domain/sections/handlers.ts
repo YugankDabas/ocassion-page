@@ -74,3 +74,7 @@ export class TermsSectionHandler extends BaseSectionHandler<'terms'> {
 export class CtaSectionHandler extends BaseSectionHandler<'cta'> {
   readonly type = 'cta' as const;
 }
+
+export class ButtonsSectionHandler extends BaseSectionHandler<'buttons'> {
+  readonly type = 'buttons' as const;
+}

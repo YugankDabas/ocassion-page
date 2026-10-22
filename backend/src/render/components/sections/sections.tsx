@@ -1,12 +1,13 @@
 import type { CSSProperties, ReactNode } from 'react';
-import type { IconSlot, PublicBrand, SectionLayout, SectionOf, SectionType, SiteSettings } from '../../../contracts';
+import type { ColorBox, IconSlot, PublicBrand, SectionBackground, SectionLayout, SectionOf, SectionType, SiteSettings } from '../../../contracts';
+import { cssUrl } from '../../cssUrl';
 import { safeHtml } from '../../html';
 import { BrandCollection } from '../brand/BrandCollection';
 import { BrandTabs } from '../brand/BrandTabs';
 import { resolveBrands, type BrandCardData } from '../brand/types';
 import { Bits, HeroArt, Medallion, MotifGlyph, Ribbon, hasRibbon, type ResolvedMotif } from '../art/motifs';
 import { ItemIcon, SlotIcon, hasIcon } from '../icons';
-import { Html, Picture, SectionHeading, SmartLink } from '../primitives';
+import { Buttons, Heading, Html, Picture, SectionHeading, SmartLink } from '../primitives';
 import { Collapsible } from './Collapsible';
 import { HeroCarousel } from './HeroCarousel';
 
@@ -48,24 +49,82 @@ function space(px: number): string {
   return `clamp(${round(px / 2)}px, ${round(px * 0.075)}vw, ${px}px)`;
 }
 
+
+/** The section's own background set in the panel (colour and / or image), as inline style. */
+function backgroundStyle(bg: SectionBackground | undefined): Record<string, string> {
+  if (!bg) return {};
+  const style: Record<string, string> = {};
+  if (bg.color) style.backgroundColor = bg.color;
+  if (bg.image.url) {
+    style.backgroundImage = `url(${cssUrl(bg.image.url)})`;
+    style.backgroundPosition = 'center';
+    style.backgroundRepeat = bg.fit === 'repeat' ? 'repeat' : 'no-repeat';
+    if (bg.fit !== 'repeat') style.backgroundSize = bg.fit;
+  }
+  return style;
+}
+
+type StyledSection = { layout?: SectionLayout; background?: SectionBackground };
+
+/**
+ * Colours of a section's parts set in the panel: for each colour set, a class on the section (bx-<part>-<role>)
+ * and its value as a CSS variable (--bx-<part>-<role>), which page.css applies to that part. A colour left empty
+ * adds nothing, so the part keeps the page's own look. Values are validated hex colours (HTML- and JSON-safe).
+ */
+export function colorHooks(colors: Record<string, ColorBox> | undefined): { classes: string; vars: Record<string, string> } {
+  const classes: string[] = [];
+  const vars: Record<string, string> = {};
+  for (const [part, box] of Object.entries(colors ?? {})) {
+    for (const [role, value] of Object.entries(box)) {
+      if (!value) continue;
+      classes.push(`bx-${part}-${role}`);
+      vars[`--bx-${part}-${role}`] = value;
+    }
+  }
+  return { classes: classes.join(' '), vars };
+}
+
+/** Spacing and background of a section, as inline style (nothing when both are left to the theme). */
+export function sectionStyle(section: StyledSection): CSSProperties | undefined {
+  const style = { ...(layoutStyle(section.layout) as Record<string, string> | undefined), ...backgroundStyle(section.background) };
+  return Object.keys(style).length ? (style as CSSProperties) : undefined;
+}
+
+/** HTML level of a section heading set in the panel: h1 only in the hero banner (its default), otherwise h2–h6 (default h2). */
+export const headingLevelOf = (section: { type: string; headingLevel?: number }) =>
+  section.type === 'hero' ? (section.headingLevel ?? 1) : Math.max(2, section.headingLevel ?? 2);
+/** Level of card titles / questions inside a section (default h3). */
+const itemLevelOf = (section: { itemHeadingLevel?: number }) => Math.max(2, section.itemHeadingLevel ?? 3);
+/**
+ * A tag chosen in the panel also sets the size, on one scale for the whole page (hs-1 largest … hs-6 smallest).
+ * With no tag chosen the heading keeps its section's own look.
+ */
+const headingSize = (section: { type: string; headingLevel?: number }) => (section.headingLevel ? ` hs-${headingLevelOf(section)}` : '');
+const itemSize = (section: { itemHeadingLevel?: number }) => (section.itemHeadingLevel ? ` hs-${itemLevelOf(section)}` : '');
+
 function Shell({
   section,
   tone,
   children,
   className = '',
+  colors,
 }: {
-  section: { id: string; anchor: string; type: string; layout?: SectionLayout };
+  section: { id: string; anchor: string; type: string } & StyledSection;
   tone?: string;
   children: ReactNode;
   className?: string;
+  /** Colours of the section's parts, set in the panel. */
+  colors?: Record<string, ColorBox>;
 }) {
+  const painted = colorHooks(colors);
+  const style = { ...(sectionStyle(section) as Record<string, string> | undefined), ...painted.vars };
   return (
     <section
       id={section.anchor || undefined}
       data-section={section.type}
       data-section-id={section.id}
-      className={`section tone-${tone ?? 'transparent'} ${className}`}
-      style={layoutStyle(section.layout)}
+      className={`section tone-${tone ?? 'transparent'} ${className}${painted.classes ? ` ${painted.classes}` : ''}`}
+      style={Object.keys(style).length ? (style as CSSProperties) : undefined}
     >
       <div className="container">{children}</div>
     </section>
@@ -101,56 +160,58 @@ function GiftPhone({ motif, title, greeting, brands }: { motif: ResolvedMotif; t
 }
 
 export const HeroSection: SectionComponent<'hero'> = ({ section, ctx }) => {
-  const { slides, height, autoplayMs, showTrustBar, trustItems } = section.props;
+  const { slides, height, autoplayMs, showTrustBar, trustItems, desktopSize, mobileSize } = section.props;
   if (slides.length === 0) return null;
+  const level = headingLevelOf(section);
 
   const renderSlide = (s: (typeof slides)[number], i: number) => {
     const hasImage = Boolean(s.desktopImage.url);
-    const motif = s.artwork === 'auto' ? ctx.motif : s.artwork;
+    const artwork = s.artwork === 'auto' ? ctx.motif : s.artwork;
+    /** The built-in illustration of this slide, or null when it is set to none. */
+    const art = artwork === 'none' ? null : artwork;
+    const decoMotif = art ?? ctx.motif;
+    const showArt = Boolean(s.artImage.url) || art !== null;
     const side = Boolean(s.sideImage.url) || s.showCard;
+    const buttons = s.buttons.filter((b) => b.label);
     const hasText = Boolean(s.heading || s.subheading || s.eyebrow);
-    const Heading = i === 0 && ctx.index === 0 ? 'h1' : 'p';
-    const copy = hasText && (
-      <div className="hero-copy">
-        {s.eyebrow && (
-          <p className="hero-eyebrow">{s.eyebrow}</p>
-        )}
-        {s.heading && <Heading className="hero-heading">{s.heading}</Heading>}
+    const copy = (hasText || buttons.length > 0) && (
+      <div className={`hero-copy align-${s.copyAlign}`}>
+        {s.eyebrow && <p className="hero-eyebrow">{s.eyebrow}</p>}
+        {/* One heading per banner: the first slide's, at the level set in the panel. */}
+        {s.heading &&
+          (i === 0 ? (
+            <Heading level={level} className={`hero-heading${headingSize(section)}`}>
+              {s.heading}
+            </Heading>
+          ) : (
+            <p className="hero-heading">{s.heading}</p>
+          ))}
         {s.subheading && <p className="hero-sub">{s.subheading}</p>}
-        {s.ctaLabel && (
-          <span className="hero-cta">
-            {s.ctaLabel} <SlotIcon slot={section.props.ctaIcon} size={18} />
-          </span>
-        )}
+        <Buttons buttons={buttons} align={s.copyAlign} className="hero-buttons" />
       </div>
     );
 
     const inner = hasImage ? (
       <>
-        <Picture
-          desktop={s.desktopImage}
-          mobile={s.mobileImage}
-          priority={ctx.index === 0 && i === 0}
-          className="hero-img"
-        />
-        {hasText && (
-          <div className="hero-scrim">
+        <Picture desktop={s.desktopImage} mobile={s.mobileImage} priority={ctx.index === 0 && i === 0} className="hero-img" />
+        {copy && (
+          <div className={`hero-scrim pos-${s.copyPosition} align-${s.copyAlign} ${hasText ? '' : 'buttons-only'}`}>
             <div className="container">{copy}</div>
           </div>
         )}
       </>
     ) : (
       <>
-        <span className="hero-band" aria-hidden />
-        {s.showDecorations && hasRibbon(motif) && !s.artImage.url && <Ribbon className="hero-ribbon" />}
-        {s.showDecorations && <Bits motif={motif} />}
-        <div className={`container hero-stage ${side ? '' : 'no-side'}`}>
+        {s.showBand && <span className="hero-band" aria-hidden />}
+        {s.showDecorations && hasRibbon(decoMotif) && !s.artImage.url && <Ribbon className="hero-ribbon" />}
+        {s.showDecorations && <Bits motif={decoMotif} />}
+        <div className={`container hero-stage ${side ? '' : 'no-side'} ${showArt ? '' : 'no-art'}`}>
           {s.artImage.url ? (
             <span className="hero-medallion hero-art-img">
               <Picture desktop={s.artImage} priority={ctx.index === 0 && i === 0} />
             </span>
           ) : (
-            <HeroArt motif={motif} className="hero-medallion" />
+            art && <HeroArt motif={art} className="hero-medallion" />
           )}
           {copy}
           {s.sideImage.url ? (
@@ -158,26 +219,30 @@ export const HeroSection: SectionComponent<'hero'> = ({ section, ctx }) => {
               <Picture desktop={s.sideImage} />
             </span>
           ) : (
-            s.showCard && <GiftPhone motif={motif} title={s.cardTitle} greeting={s.cardText} brands={ctx.featured} />
+            s.showCard && <GiftPhone motif={decoMotif} title={s.cardTitle} greeting={s.cardText} brands={ctx.featured} />
           )}
         </div>
       </>
     );
 
-    const cls = `hero-frame h-${height} ${hasImage ? 'has-image' : 'no-image'}`;
-    return s.href ? (
-      <SmartLink key={s.id} href={s.href} className={cls} ariaLabel={s.heading || s.desktopImage.alt || undefined}>
-        {inner}
-      </SmartLink>
-    ) : (
-      <div key={s.id} className={cls}>
+    // The banner image is shown in the shape of the size chosen in the panel (desktop, and phone when a phone
+    // image is set), so an image uploaded at that size is never cropped.
+    const ratio = (size: { width: number; height: number }) => `${size.width} / ${size.height}`;
+    const frameStyle = hasImage
+      ? ({ '--banner-ratio': ratio(desktopSize), '--banner-ratio-m': ratio(s.mobileImage.url ? mobileSize : desktopSize) } as CSSProperties)
+      : undefined;
+    const cls = `hero-frame h-${height} ${hasImage ? 'has-image' : 'no-image'} ${!hasImage && !s.showBand ? 'no-band' : ''} ${s.href ? 'has-link' : ''}`;
+    return (
+      <div key={s.id} className={cls} style={frameStyle}>
+        {/* The whole banner links to the slide link, under the buttons (which have their own links). */}
+        {s.href && <SmartLink href={s.href} className="hero-link" ariaLabel={s.heading || s.desktopImage.alt || 'Open offer'} />}
         {inner}
       </div>
     );
   };
 
   return (
-    <section id={section.anchor || undefined} data-section="hero" data-section-id={section.id} className="section-hero" style={layoutStyle(section.layout)}>
+    <section id={section.anchor || undefined} data-section="hero" data-section-id={section.id} className="section-hero" style={sectionStyle(section)}>
       {slides.length === 1 ? (
         renderSlide(slides[0]!, 0)
       ) : (
@@ -190,7 +255,7 @@ export const HeroSection: SectionComponent<'hero'> = ({ section, ctx }) => {
           <ul className="trust-bar" style={{ '--cols': trustItems.length } as CSSProperties}>
             {trustItems.map((t) => (
               <li key={t.id}>
-                <span className="trust-icon">
+                <span className={`trust-icon ${t.image.url ? 'has-image' : ''}`}>
                   <ItemIcon item={t} size={20} />
                 </span>
                 {(t.title || t.text) && (
@@ -222,7 +287,11 @@ export const IntroSection: SectionComponent<'intro'> = ({ section, ctx }) => {
       )}
       <div className={`intro align-${p.align}`}>
         {p.eyebrow && <p className="eyebrow">{p.eyebrow}</p>}
-        {p.heading && (ctx.index === 0 ? <h1>{p.heading}</h1> : <h2>{p.heading}</h2>)}
+        {p.heading && (
+          <Heading level={headingLevelOf(section)} className={`intro-title${headingSize(section)}`}>
+            {p.heading}
+          </Heading>
+        )}
         {p.showOrnament && (p.eyebrow || p.heading) && <span className="ornament" aria-hidden />}
         {p.body && <Html html={safeHtml(p.body)} />}
       </div>
@@ -235,9 +304,12 @@ export const FeaturesSection: SectionComponent<'features'> = ({ section, ctx }) 
   const p = section.props;
   if (!p.items.length) return null;
   return (
-    <Shell section={section} tone={p.tone}>
-      <SectionHeading heading={p.heading} subheading={p.subheading} ornament={p.showOrnament} />
-      <ul className="features" style={{ '--cols': p.columns } as CSSProperties}>
+    <Shell section={section} tone={p.tone} colors={p.colors}>
+      <SectionHeading heading={p.heading} subheading={p.subheading} ornament={p.showOrnament} level={headingLevelOf(section)} size={headingSize(section)} />
+      <ul
+        className={`features card-${p.cardStyle} text-${p.textAlign} ${p.animation ? '' : 'no-anim'}`}
+        style={{ '--cols': p.columns } as CSSProperties}
+      >
         {p.items.map((f, i) => (
           <li key={f.id} className="feature">
             {p.showNumbers && (
@@ -250,7 +322,11 @@ export const FeaturesSection: SectionComponent<'features'> = ({ section, ctx }) 
                 {f.icon.url ? <Picture desktop={f.icon} /> : f.emoji}
               </span>
             )}
-            {f.title && <h3>{f.title}</h3>}
+            {f.title && (
+              <Heading level={itemLevelOf(section)} className={`feature-title${itemSize(section)}`}>
+                {f.title}
+              </Heading>
+            )}
             {f.description && <p>{f.description}</p>}
           </li>
         ))}
@@ -265,11 +341,12 @@ export const BrandGridSection: SectionComponent<'brandGrid'> = ({ section, ctx }
   const brands = resolveBrands(p.brands, ctx.brands);
   if (!brands.length) return null;
   return (
-    <Shell section={section} className="section-brands">
-      <SectionHeading heading={p.heading} subheading={p.subheading} ornament={p.showOrnament} />
+    <Shell section={section} className="section-brands" colors={p.colors}>
+      <SectionHeading heading={p.heading} subheading={p.subheading} ornament={p.showOrnament} level={headingLevelOf(section)} size={headingSize(section)} />
       <BrandCollection
         brands={brands}
         layout={p.layout}
+        look={{ arrows: p.arrows, cardStyle: p.cardStyle, cardSize: p.cardSize, cardCorners: p.cardCorners }}
         initialCount={p.initialCount}
         showSearch={p.showSearch}
         showDiscountFilter={p.showDiscountFilter}
@@ -292,9 +369,17 @@ export const BrandTabsSection: SectionComponent<'brandTabs'> = ({ section, ctx }
     .filter((t) => t.brands.length > 0);
   if (!tabs.length) return null;
   return (
-    <Shell section={section} className="section-tabs">
-      <SectionHeading heading={p.heading} subheading={p.subheading} ornament={p.showOrnament} />
-      <BrandTabs tabs={tabs} ctaLabel={p.ctaLabel} labels={ctx.labels} id={section.id} icons={{ discount: p.discountIcon, cta: p.ctaIcon }} />
+    <Shell section={section} className="section-tabs" colors={p.colors}>
+      <SectionHeading heading={p.heading} subheading={p.subheading} ornament={p.showOrnament} level={headingLevelOf(section)} size={headingSize(section)} />
+      <BrandTabs
+        tabs={tabs}
+        ctaLabel={p.ctaLabel}
+        labels={ctx.labels}
+        id={section.id}
+        icons={{ discount: p.discountIcon, cta: p.ctaIcon }}
+        layout={p.layout}
+        look={{ arrows: p.arrows, cardStyle: p.cardStyle, cardSize: p.cardSize, cardCorners: p.cardCorners }}
+      />
     </Shell>
   );
 };
@@ -305,7 +390,7 @@ export const CategoriesSection: SectionComponent<'categories'> = ({ section, ctx
   if (!p.items.length) return null;
   return (
     <Shell section={section}>
-      <SectionHeading heading={p.heading} subheading={p.subheading} ornament={p.showOrnament} />
+      <SectionHeading heading={p.heading} subheading={p.subheading} ornament={p.showOrnament} level={headingLevelOf(section)} size={headingSize(section)} />
       <ul className="categories">
         {p.items.map((c) => {
           const body = (
@@ -348,7 +433,7 @@ export const ImageBannersSection: SectionComponent<'imageBanners'> = ({ section,
   if (!items.length) return null;
   return (
     <Shell section={section}>
-      <SectionHeading heading={p.heading} ornament={p.showOrnament} />
+      <SectionHeading heading={p.heading} ornament={p.showOrnament} level={headingLevelOf(section)} size={headingSize(section)} />
       <div className="banners" style={{ '--cols': p.columns } as CSSProperties}>
         {items.map((b) => {
           const img = (
@@ -381,11 +466,11 @@ export const RichTextSection: SectionComponent<'richText'> = ({ section, ctx }) 
     <Shell section={section} tone={p.tone} className="section-richtext">
       <div className="rich-text">
         {p.heading && (
-          <h2>
+          <Heading level={headingLevelOf(section)} className={`rich-text-title${headingSize(section)}`}>
             {p.showMark && <span className="rich-text-mark" aria-hidden />}
             <SlotIcon slot={p.headingIcon} size={22} className="heading-icon" />
             {p.heading}
-          </h2>
+          </Heading>
         )}
         {p.collapsible ? <Collapsible moreLabel={ctx.labels.readMore} lessLabel={ctx.labels.readLess}>{body}</Collapsible> : body}
       </div>
@@ -423,12 +508,16 @@ export const FaqSection: SectionComponent<'faq'> = ({ section }) => {
   if (!items.length) return null;
   const hasAside = Boolean(p.eyebrow || p.heading || p.intro || p.helpTitle || p.helpText);
   return (
-    <Shell section={section} className="section-faq">
+    <Shell section={section} className="section-faq" colors={p.colors}>
       <div className={`faq-layout ${hasAside ? '' : 'no-aside'}`}>
         {hasAside && (
           <aside className="faq-aside">
             {p.eyebrow && <p className="eyebrow">{p.eyebrow}</p>}
-            {p.heading && <h2>{p.heading}</h2>}
+            {p.heading && (
+              <Heading level={headingLevelOf(section)} className={`faq-title${headingSize(section)}`}>
+                {p.heading}
+              </Heading>
+            )}
             {p.showOrnament && (p.eyebrow || p.heading) && <span className="ornament left" aria-hidden />}
             {p.intro && <p>{p.intro}</p>}
             {(p.helpTitle || p.helpText) && <FaqHelp title={p.helpTitle} text={p.helpText} href={p.helpHref} icon={p.helpIcon} />}
@@ -443,7 +532,9 @@ export const FaqSection: SectionComponent<'faq'> = ({ section }) => {
                     {String(i + 1).padStart(2, '0')}
                   </span>
                 )}
-                <h3>{q.question}</h3>
+                <Heading level={itemLevelOf(section)} className={`faq-question${itemSize(section)}`}>
+                  {q.question}
+                </Heading>
                 {hasIcon(p.toggleIcon) && (
                   <span className="faq-toggle" aria-hidden>
                     <SlotIcon slot={p.toggleIcon} size={18} />
@@ -465,9 +556,9 @@ export const TermsSection: SectionComponent<'terms'> = ({ section }) => {
   if (!p.body) return null;
   const body = <Html html={safeHtml(p.body)} className="terms-body" />;
   const title = (
-    <h2>
+    <Heading level={headingLevelOf(section)} className={`terms-title${headingSize(section)}`}>
       <SlotIcon slot={p.headingIcon} size={18} /> {p.heading || 'Terms & Conditions'}
-    </h2>
+    </Heading>
   );
   return (
     <Shell section={section} className="section-terms">
@@ -492,7 +583,7 @@ export const TermsSection: SectionComponent<'terms'> = ({ section }) => {
 /* ---------- CTA ---------- */
 export const CtaSection: SectionComponent<'cta'> = ({ section, ctx }) => {
   const p = section.props;
-  if (!p.heading && !p.text) return null;
+  if (!p.heading && !p.text && !p.buttons.some((b) => b.label)) return null;
   return (
     <Shell section={section}>
       <div className={`cta tone-${p.tone} ${p.backgroundImage.url ? 'has-bg' : ''}`}>
@@ -500,15 +591,26 @@ export const CtaSection: SectionComponent<'cta'> = ({ section, ctx }) => {
         <span className="cta-glow" aria-hidden />
         {!p.backgroundImage.url && p.showArt && <MotifGlyph motif={ctx.motif} size={200} className="cta-art" />}
         <div className="cta-copy">
-          {p.heading && <h2>{p.heading}</h2>}
+          {p.heading && (
+            <Heading level={headingLevelOf(section)} className={`cta-title${headingSize(section)}`}>
+              {p.heading}
+            </Heading>
+          )}
           {p.text && <p>{p.text}</p>}
         </div>
-        {p.button.label && p.button.href && (
-          <SmartLink href={p.button.href} className="btn-primary">
-            {p.button.label} <SlotIcon slot={p.buttonIcon} size={18} />
-          </SmartLink>
-        )}
+        <Buttons buttons={p.buttons} align={p.buttonsAlign} className="cta-buttons" />
       </div>
+    </Shell>
+  );
+};
+
+/* ---------- Buttons (a row of buttons, anywhere on the page) ---------- */
+export const ButtonsSection: SectionComponent<'buttons'> = ({ section }) => {
+  const p = section.props;
+  if (!p.buttons.some((b) => b.label)) return null;
+  return (
+    <Shell section={section} className="section-buttons">
+      <Buttons buttons={p.buttons} align={p.align} />
     </Shell>
   );
 };

@@ -75,7 +75,7 @@ export function createContainer(env: Env, logger: Logger, prisma = createPrismaC
   const audit = new AuditService(repos.audit, logger);
   const site = new SiteSettingsService(repos.settings, changes, audit);
 
-  const pages = new PageService(repos.pages, repos.occasions, repos.templates, repos.brands, registry, new TemplateFactory(), audit, urls);
+  const pages = new PageService(repos.pages, repos.occasions, repos.templates, repos.brands, registry, new TemplateFactory(), audit, urls, repos.media);
   const payloads = new PagePayloadService(repos.occasions, repos.brands, site, registry);
   // Downloads embed images from our own media storage and GyFTR's CDN (brand logos); nothing else is fetched.
   const inliner = new ImageInliner([storage.publicBaseUrl, 'https://cdn.gyftr.com', 'https://cdn2.gyftr.com'].filter(Boolean), logger);

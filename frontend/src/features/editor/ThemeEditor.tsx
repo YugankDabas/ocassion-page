@@ -1,4 +1,5 @@
 import { BACKGROUND_PATTERNS, CORNER_STYLES, HEADING_FONTS, MOTIFS, type Theme } from '../../contracts';
+import { ImageField } from '../../components/fields/ImageField';
 import { ColorInput, Select } from '../../components/ui';
 
 const COLOR_FIELDS: { key: keyof Theme; label: string }[] = [
@@ -35,9 +36,35 @@ export function ThemeEditor({ value, onChange }: { value: Theme; onChange: (t: T
       </div>
       <div className="grid-3">
         <Select label="Heading font" value={value.headingFont} onChange={(v) => set('headingFont', v)} options={HEADING_FONTS.map((f) => ({ value: f, label: label(f) }))} />
-        <Select label="Background pattern" value={value.pattern} onChange={(v) => set('pattern', v)} options={BACKGROUND_PATTERNS.map((f) => ({ value: f, label: label(f) }))} />
+        <Select
+          label="Background pattern"
+          value={value.pattern}
+          onChange={(v) => set('pattern', v)}
+          options={BACKGROUND_PATTERNS.map((f) => ({ value: f, label: f === 'none' ? 'None (plain colour)' : label(f) }))}
+        />
         <Select label="Corners" value={value.corners} onChange={(v) => set('corners', v)} options={CORNER_STYLES.map((f) => ({ value: f, label: label(f) }))} />
       </div>
+      <fieldset className="group stack">
+        <legend>Page background image (optional)</legend>
+        <ImageField
+          label="Image"
+          hint="Shown behind the whole page, over the page background colour and under the pattern (choose “None” above for no pattern). A section can have its own background too (Section → Background)."
+          value={value.backgroundImage}
+          onChange={(img) => set('backgroundImage', img)}
+        />
+        {value.backgroundImage.url && (
+          <Select
+            label="Image fit"
+            value={value.backgroundFit}
+            onChange={(v) => set('backgroundFit', v)}
+            options={[
+              { value: 'cover', label: 'Fill the page (edges may be hidden)' },
+              { value: 'contain', label: 'Show the whole image' },
+              { value: 'repeat', label: 'Repeat as a pattern' },
+            ]}
+          />
+        )}
+      </fieldset>
       <Select
         label="Artwork"
         value={value.motif}

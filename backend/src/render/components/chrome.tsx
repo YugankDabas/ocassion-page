@@ -98,7 +98,7 @@ export function SiteFooter({ site, logos }: { site: SiteSettings; logos: ChromeL
         <ul className="footer-promises" style={{ '--cols': Math.max(1, f.promises.length) } as CSSProperties}>
           {f.promises.map((p) => (
             <li key={p.id}>
-              <span className="footer-promise-icon">
+              <span className={`footer-promise-icon ${p.image.url ? 'has-image' : ''}`}>
                 <ItemIcon item={p} size={20} />
               </span>
               {(p.title || p.text) && (

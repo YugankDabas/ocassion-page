@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { colorSchema } from './primitives';
+import { BACKGROUND_FITS, colorSchema, imageSchema } from './primitives';
 
 export const HEADING_FONTS = ['poppins', 'playfair', 'kalam'] as const;
 export const BACKGROUND_PATTERNS = ['none', 'dots', 'rangoli', 'sparkle', 'hearts', 'snow'] as const;
@@ -24,6 +24,9 @@ export const themeSchema = z.object({
   mutedText: colorSchema.default('#6B5B4E'),
   headingFont: z.enum(HEADING_FONTS).default('poppins'),
   pattern: z.enum(BACKGROUND_PATTERNS).default('none'),
+  /** Your own page background image (optional), over the background colour and under the pattern. */
+  backgroundImage: imageSchema.default({}),
+  backgroundFit: z.enum(BACKGROUND_FITS).default('cover'),
   corners: z.enum(CORNER_STYLES).default('soft'),
   motif: z.enum(MOTIFS).default('auto'),
 });

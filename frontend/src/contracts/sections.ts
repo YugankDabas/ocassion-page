@@ -1,5 +1,25 @@
 import { z } from 'zod';
-import { hrefSchema, html, iconItemSchema, iconSlot, imageSchema, itemIdSchema, label, linkSchema, text } from './primitives';
+import {
+  ALIGNMENTS,
+  buttonsSchema,
+  fitsSize,
+  hrefSchema,
+  html,
+  iconItemSchema,
+  iconSlot,
+  imageSchema,
+  itemIdSchema,
+  label,
+  linkSchema,
+  sectionBackgroundSchema,
+  colorPartsSchema,
+  sizeOfImage,
+  sizeSchema,
+  text,
+  type Button,
+  type Image,
+  type Size,
+} from './primitives';
 import { MOTIFS } from './theme';
 
 /**
@@ -43,7 +63,22 @@ const envelope = {
   name: z.string().trim().max(80).optional(),
   /** Spacing; empty = the section's built-in spacing. */
   layout: sectionLayoutSchema.optional(),
+  /**
+   * HTML level of the section heading (SEO): 2–6, and 1 only for the hero banner. Empty = h1 for the hero, h2 otherwise.
+   * The look stays the same whatever the level.
+   */
+  headingLevel: z.number().int().min(1).max(6).optional(),
+  /** Level of the card titles (highlights) or questions (FAQ) inside the section; empty = 3. */
+  itemHeadingLevel: z.number().int().min(2).max(6).optional(),
+  /** The section's own background; empty = the theme's. */
+  background: sectionBackgroundSchema.optional(),
 };
+
+/** Legacy single button → list of buttons (pages saved before buttons became a list). */
+const legacyButton = (labelText: unknown, href: unknown, icon: unknown, style: Button['style']) =>
+  typeof labelText === 'string' && labelText.trim()
+    ? [{ id: 'btn-1', label: labelText, href: typeof href === 'string' ? href : '', style, ...(icon ? { icon } : {}) }]
+    : [];
 
 const toneSchema = z.enum(['primary', 'surface', 'accent', 'transparent']).default('surface');
 /** The small decorative line under a section heading. */
@@ -52,6 +87,11 @@ const alignSchema = z.enum(['left', 'center']).default('center');
 const brandIdSchema = z.string().uuid();
 
 /* ---------- Hero banner carousel ---------- */
+/** Built-in illustrations for a hero slide without a banner image, or none. */
+export const HERO_ARTWORKS = [...MOTIFS, 'none'] as const;
+/** Where the text and buttons sit on a banner image. */
+export const COPY_POSITIONS = ['top', 'middle', 'bottom'] as const;
+
 export const heroSlideSchema = z.object({
   id: itemIdSchema,
   desktopImage: imageSchema.default({}),
@@ -60,13 +100,22 @@ export const heroSlideSchema = z.object({
   eyebrow: text(80),
   heading: text(140),
   subheading: text(240),
+  /** @deprecated Replaced by `buttons`; read once from pages saved before. */
   ctaLabel: text(40),
+  /** Buttons under the text, each with its own link and look. */
+  buttons: buttonsSchema,
+  /** Text and buttons: left, centre or right... */
+  copyAlign: z.enum(ALIGNMENTS).default('left'),
+  /** ...and, on a banner image, at the top, middle or bottom. */
+  copyPosition: z.enum(COPY_POSITIONS).default('middle'),
   /** Greeting on the illustrated gift card (shown when the slide has no banner image), e.g. "Happy Diwali". */
   cardText: text(40),
   /** Title printed on the illustrated gift card. */
   cardTitle: label('Gift Card', 30),
-  /** Built-in illustration for this slide. "auto" uses the artwork chosen in the page theme. */
-  artwork: z.enum(MOTIFS).default('auto'),
+  /** Built-in illustration for this slide. "auto" uses the artwork chosen in the page theme; "none" shows none. */
+  artwork: z.enum(HERO_ARTWORKS).default('auto'),
+  /** The coloured, patterned band behind a slide without a banner image. */
+  showBand: z.boolean().default(true),
   /** Your own illustration (transparent PNG / WebP works best) shown instead of the built-in artwork. */
   artImage: imageSchema.default({}),
   /** Your own image shown instead of the gift-card phone on the right. */
@@ -76,11 +125,14 @@ export const heroSlideSchema = z.object({
   /** Ribbon and floating sparkles / confetti around the banner. */
   showDecorations: z.boolean().default(true),
 });
-export const heroPropsSchema = z.object({
+const heroPropsObject = z.object({
   slides: z.array(heroSlideSchema).max(10).default([]),
+  /** Banner image size in px (desktop and phone): what to upload, and the shape it is shown in, so it is never cropped. */
+  desktopSize: sizeSchema.default({ width: 1920, height: 600 }),
+  mobileSize: sizeSchema.default({ width: 800, height: 800 }),
   autoplayMs: z.number().int().min(0).max(20_000).default(5000),
   height: z.enum(['compact', 'standard', 'tall']).default('standard'),
-  /** Arrow after each slide's button text. */
+  /** @deprecated The icon of each button is set on the button; read once from pages saved before. */
   ctaIcon: iconSlot('arrowRight'),
   /** GyFTR trust strip under the banner (instant delivery, secure payments, ...). */
   showTrustBar: z.boolean().default(true),
@@ -94,6 +146,41 @@ export const heroPropsSchema = z.object({
       { id: 'trust-4', icon: 'shield', title: 'Safe & secure', text: 'Trusted by millions' },
     ]),
 });
+/**
+ * Pages saved before:
+ * - with one button per slide (label + slide link) get it as their first button;
+ * - without a banner size take the size of their first banner image, so the banners they have keep fitting.
+ */
+export const heroPropsSchema = z.preprocess((raw) => {
+  if (!raw || typeof raw !== 'object') return raw;
+  const props = raw as { slides?: unknown; ctaIcon?: unknown; desktopSize?: unknown; mobileSize?: unknown };
+  if (!Array.isArray(props.slides)) return raw;
+  const slides = props.slides.map((slide) => {
+    if (!slide || typeof slide !== 'object' || 'buttons' in slide) return slide;
+    const old = slide as { ctaLabel?: unknown; href?: unknown };
+    return { ...slide, buttons: legacyButton(old.ctaLabel, old.href, props.ctaIcon, 'theme'), ctaLabel: '' };
+  });
+  const firstSize = (key: 'desktopImage' | 'mobileImage') =>
+    slides.map((slide) => sizeOfImage((slide as Record<string, Image> | null)?.[key])).find(Boolean);
+  const desktopSize = props.desktopSize ?? firstSize('desktopImage');
+  const mobileSize = props.mobileSize ?? firstSize('mobileImage');
+  return { ...props, slides, ...(desktopSize && { desktopSize }), ...(mobileSize && { mobileSize }) };
+}, heroPropsObject);
+
+/** Hero banner images that are not the banner size set in the section (each with the size it is). */
+export function heroSizeMismatches(props: { slides: { desktopImage: Image; mobileImage: Image }[]; desktopSize: Size; mobileSize: Size }) {
+  const out: { slide: number; device: 'desktop' | 'phone'; url: string; width: number; height: number; expected: Size }[] = [];
+  props.slides.forEach((s, i) => {
+    for (const [device, image, expected] of [
+      ['desktop', s.desktopImage, props.desktopSize],
+      ['phone', s.mobileImage, props.mobileSize],
+    ] as const) {
+      if (image.url && image.width && image.height && !fitsSize(image, expected))
+        out.push({ slide: i + 1, device, url: image.url, width: image.width, height: image.height, expected });
+    }
+  });
+  return out;
+}
 
 /* ---------- Intro block (heading + rich text) ---------- */
 export const introPropsSchema = z.object({
@@ -106,6 +193,39 @@ export const introPropsSchema = z.object({
   /** The two occasion medallions at the sides (with the theme-colour background). */
   showDecorations: z.boolean().default(true),
 });
+
+/* ---------- Card looks (highlights, brand cards) ---------- */
+export const CARD_STYLES = ['elevated', 'outlined', 'flat', 'plain'] as const;
+export const BRAND_CARD_SIZES = ['compact', 'standard', 'large'] as const;
+export const CARD_CORNERS = ['square', 'rounded', 'round'] as const;
+/** Arrows of a single-row (sideways scrolling) brand list. */
+export const ARROW_SHAPES = ['circle', 'rounded', 'square'] as const;
+export const ARROW_COLORS = ['light', 'dark', 'theme', 'outline'] as const;
+export const arrowsSchema = z
+  .object({
+    prev: iconSlot('chevronLeft'),
+    next: iconSlot('chevronRight'),
+    /** Button size in px. */
+    size: z.number().int().min(24).max(80).default(44),
+    shape: z.enum(ARROW_SHAPES).default('circle'),
+    color: z.enum(ARROW_COLORS).default('light'),
+  })
+  .default({});
+export type Arrows = z.infer<typeof arrowsSchema>;
+/** Parts of a brand list whose colours are set in the panel (tab parts only show in brand tabs). */
+export const BRAND_LIST_COLOR_PARTS = ['card', 'details', 'logo', 'pill', 'cta', 'badge', 'arrow', 'tools', 'search', 'chip', 'chipActive', 'tabBar', 'tab', 'tabActive'] as const;
+export const FEATURE_COLOR_PARTS = ['card', 'icon', 'title', 'text'] as const;
+export const FAQ_COLOR_PARTS = ['item', 'index', 'question', 'answer', 'toggle', 'help'] as const;
+/** How brand cards look and how the list is laid out (brand grid and brand tabs). */
+const brandListLook = {
+  /** Rows with "View more", or a single row that scrolls sideways with arrows. */
+  layout: z.enum(['grid', 'carousel']).default('grid'),
+  arrows: arrowsSchema,
+  cardStyle: z.enum(CARD_STYLES).default('elevated'),
+  cardSize: z.enum(BRAND_CARD_SIZES).default('standard'),
+  cardCorners: z.enum(CARD_CORNERS).default('round'),
+  colors: colorPartsSchema(BRAND_LIST_COLOR_PARTS),
+};
 
 /* ---------- Feature / USP highlights ---------- */
 export const featureItemSchema = z.object({
@@ -124,6 +244,13 @@ export const featuresPropsSchema = z.object({
   /** The large 01, 02, ... in the corner of each card. */
   showNumbers: z.boolean().default(true),
   showOrnament,
+  /** Card look: raised with a shadow, outlined, flat (filled, no shadow) or plain (no card). */
+  cardStyle: z.enum(CARD_STYLES).default('elevated'),
+  /** The lift and colour bar when the pointer is over a card. */
+  animation: z.boolean().default(true),
+  /** Text inside the cards. */
+  textAlign: z.enum(['left', 'center']).default('left'),
+  colors: colorPartsSchema(FEATURE_COLOR_PARTS),
 });
 
 /* ---------- Brand grid / carousel ---------- */
@@ -181,7 +308,7 @@ export function brandMatchesFilter(f: Pick<BrandFilter, 'kind' | 'min' | 'max' |
 export const brandGridPropsSchema = z.object({
   heading: text(160),
   subheading: text(300),
-  layout: z.enum(['grid', 'carousel']).default('grid'),
+  ...brandListLook,
   brands: z.array(brandRefSchema).max(200).default([]),
   initialCount: z.number().int().min(4).max(60).default(12),
   showSearch: z.boolean().default(false),
@@ -212,6 +339,7 @@ export const brandTabsPropsSchema = z.object({
   heading: text(160),
   subheading: text(300),
   tabs: z.array(brandTabSchema).max(12).default([]),
+  ...brandListLook,
   ctaLabel: text(30),
   discountIcon: iconSlot('ticket'),
   ctaIcon: iconSlot('arrowRight'),
@@ -285,6 +413,7 @@ export const faqPropsSchema = z.object({
   /** The 01, 02, ... before each question. */
   showNumbers: z.boolean().default(true),
   showOrnament,
+  colors: colorPartsSchema(FAQ_COLOR_PARTS),
 });
 
 /* ---------- Terms & conditions ---------- */
@@ -300,16 +429,31 @@ export const termsPropsSchema = z.object({
 });
 
 /* ---------- Call to action ---------- */
-export const ctaPropsSchema = z.object({
+const ctaPropsObject = z.object({
   heading: text(160),
   text: text(400),
+  /** @deprecated Replaced by `buttons`; read once from pages saved before. */
   button: linkSchema.default({}),
+  buttons: buttonsSchema,
+  buttonsAlign: z.enum(ALIGNMENTS).default('right'),
   backgroundImage: imageSchema.default({}),
   tone: toneSchema,
-  /** Arrow after the button text. */
+  /** @deprecated The icon of each button is set on the button; read once from pages saved before. */
   buttonIcon: iconSlot('arrowRight'),
   /** The occasion artwork in the corner (when there is no background image). */
   showArt: z.boolean().default(true),
+});
+/** Pages saved with one button get it as their first button. */
+export const ctaPropsSchema = z.preprocess((raw) => {
+  if (!raw || typeof raw !== 'object' || 'buttons' in raw) return raw;
+  const props = raw as { button?: { label?: unknown; href?: unknown }; buttonIcon?: unknown };
+  return { ...props, buttons: legacyButton(props.button?.label, props.button?.href, props.buttonIcon, 'gyftr'), button: {} };
+}, ctaPropsObject);
+
+/* ---------- Buttons (a row of buttons, anywhere on the page) ---------- */
+export const buttonsPropsSchema = z.object({
+  buttons: buttonsSchema,
+  align: z.enum(ALIGNMENTS).default('center'),
 });
 
 export const sectionSchema = z.discriminatedUnion('type', [
@@ -324,6 +468,7 @@ export const sectionSchema = z.discriminatedUnion('type', [
   z.object({ ...envelope, type: z.literal('faq'), props: faqPropsSchema }),
   z.object({ ...envelope, type: z.literal('terms'), props: termsPropsSchema }),
   z.object({ ...envelope, type: z.literal('cta'), props: ctaPropsSchema }),
+  z.object({ ...envelope, type: z.literal('buttons'), props: buttonsPropsSchema }),
 ]);
 
 export type Section = z.infer<typeof sectionSchema>;
@@ -346,6 +491,7 @@ export const SECTION_TYPES = [
   'faq',
   'terms',
   'cta',
+  'buttons',
 ] as const satisfies readonly SectionType[];
 
 /** Props schema lookup used to build defaults for a freshly added section. */
@@ -361,6 +507,7 @@ export const SECTION_PROPS_SCHEMAS = {
   faq: faqPropsSchema,
   terms: termsPropsSchema,
   cta: ctaPropsSchema,
+  buttons: buttonsPropsSchema,
 } as const satisfies { [K in SectionType]: z.ZodTypeAny };
 
 export function defaultPropsFor<T extends SectionType>(type: T): SectionProps<T> {

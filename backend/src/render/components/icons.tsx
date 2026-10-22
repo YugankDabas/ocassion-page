@@ -13,6 +13,8 @@ const PATHS = {
   ticket: 'M3 9a3 3 0 0 0 0 6v4h18v-4a3 3 0 0 0 0-6V5H3zM13 5v2M13 17v2M13 11v2',
   arrowRight: 'M5 12h14M13 5l7 7-7 7',
   chevronDown: 'm6 9 6 6 6-6',
+  chevronLeft: 'm15 18-6-6 6-6',
+  chevronRight: 'm9 18 6-6-6-6',
   check: 'M20 6 9 17l-5-5',
   sparkles: 'M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM5 3v4M3 5h4M19 17v4M17 19h4',
   message: 'M21 12a8 8 0 0 1-11.8 7L3 21l2-6.2A8 8 0 1 1 21 12z',
@@ -34,7 +36,8 @@ export type IconName = keyof typeof PATHS;
 export function ItemIcon({ item, size = 20 }: { item: { icon: string; image: { url: string } }; size?: number }) {
   if (item.image.url) {
     // eslint-disable-next-line @next/next/no-img-element -- small admin-uploaded icon from any host
-    return <img src={item.image.url} alt="" width={size + 6} height={size + 6} loading="lazy" style={{ objectFit: 'contain' }} />;
+    // Fills its box (trust bar, footer) and is shown whole, never cropped: see .item-icon-img.
+    return <img src={item.image.url} alt="" width={size + 6} height={size + 6} loading="lazy" className="item-icon-img" />;
   }
   return <Icon name={item.icon in PATHS ? (item.icon as IconName) : 'sparkles'} size={size} />;
 }

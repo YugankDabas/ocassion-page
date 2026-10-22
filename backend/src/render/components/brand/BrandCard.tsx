@@ -63,26 +63,21 @@ export function BrandCard({
       data-position={position}
       aria-label={`${brand.name} gift card${brand.discountText ? `, ${brand.discountText}` : ''}`}
     >
-      <span
-        className={`gift-face ${brand.logoUrl ? 'has-logo' : ''}`}
-        style={brand.logoUrl ? undefined : ({ '--face-from': from, '--face-to': to } as React.CSSProperties)}
-      >
+      {/* The initials face is always there: shown when there is no logo, or when the logo fails to load (page script). */}
+      <span className={`gift-face ${brand.logoUrl ? 'has-logo' : ''}`} style={{ '--face-from': from, '--face-to': to } as React.CSSProperties}>
         {brand.badge && <span className="brand-badge">{brand.badge}</span>}
-        {brand.logoUrl ? (
+        {brand.logoUrl && (
           <span className="gift-logo">
             <img src={brand.logoUrl} alt="" loading="lazy" decoding="async" />
           </span>
-        ) : (
-          <>
-            <span className="gift-chip" aria-hidden />
-            <span className="gift-initials" aria-hidden>
-              {monogram(brand.name)}
-            </span>
-            <span className="gift-face-name" aria-hidden>
-              {brand.name}
-            </span>
-          </>
         )}
+        <span className="gift-chip" aria-hidden />
+        <span className="gift-initials" aria-hidden>
+          {monogram(brand.name)}
+        </span>
+        <span className="gift-face-name" aria-hidden>
+          {brand.name}
+        </span>
         {labels.cardBrandMark && (
           <span className="gift-mark" aria-hidden>
             {labels.cardBrandMark}

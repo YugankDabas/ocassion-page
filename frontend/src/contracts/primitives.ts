@@ -81,7 +81,7 @@ export const label = (fallback: string, max = 120) => z.string().trim().max(max)
 export const ICONS = [
   'zap', 'ticket', 'coins', 'shield', 'lock', 'gift', 'sparkles', 'message', 'mail', 'check',
   'search', 'cart', 'user', 'heart', 'star', 'truck', 'clock', 'phone', 'tag', 'percent',
-  'arrowRight', 'chevronDown', 'plus',
+  'arrowRight', 'chevronDown', 'plus', 'chevronLeft', 'chevronRight',
 ] as const;
 export type IconName = (typeof ICONS)[number];
 
@@ -115,3 +115,73 @@ export const iconItemSchema = z.object({
   text: text(120),
 });
 export type IconItem = z.infer<typeof iconItemSchema>;
+
+/** A colour that may be left empty (= the default). */
+export const optionalColor = z.union([colorSchema, z.literal('')]).default('');
+
+/** Colours of one part of a section (a card, a pill, an arrow…); each one left empty keeps the page's own look. */
+export const colorBoxSchema = z
+  .object({
+    background: optionalColor,
+    border: optionalColor,
+    /** Text or icon colour. */
+    text: optionalColor,
+  })
+  .default({});
+export type ColorBox = z.infer<typeof colorBoxSchema>;
+export type ColorRole = keyof ColorBox;
+
+/** The colours of the parts of a section, set in the panel: one ColorBox per part. */
+export function colorPartsSchema<const K extends string>(parts: readonly K[]) {
+  // Every part has its own default, so {} is a valid value (the generic parts hide that from the type checker).
+  return z.object(Object.fromEntries(parts.map((p) => [p, colorBoxSchema])) as Record<K, typeof colorBoxSchema>).default({} as never);
+}
+
+/** An image size in px: what to upload, and the shape it is shown in (never cropped). */
+export const sizeSchema = z.object({
+  width: z.number().int().min(50).max(4000),
+  height: z.number().int().min(20).max(4000),
+});
+export type Size = z.infer<typeof sizeSchema>;
+
+/** Whether an image is exactly this size. An image whose size is not known (no width or height) is not judged. */
+export function fitsSize(image: { width?: number; height?: number }, size: Size): boolean {
+  return !image.width || !image.height || (image.width === size.width && image.height === size.height);
+}
+
+/** The size of an image as a banner size, if it can be one (between 50×20 and 4000×4000 px). */
+export function sizeOfImage(image: { url?: string; width?: number; height?: number } | null | undefined): Size | undefined {
+  if (!image?.url || !image.width || !image.height) return undefined;
+  const parsed = sizeSchema.safeParse({ width: image.width, height: image.height });
+  return parsed.success ? parsed.data : undefined;
+}
+
+/** Looks a button can have: the theme colour, GyFTR green, white, dark, or an outline. */
+export const BUTTON_STYLES = ['theme', 'gyftr', 'light', 'dark', 'outline'] as const;
+export const BUTTON_SIZES = ['small', 'medium', 'large'] as const;
+
+/** A button: text, link, look, size and icon. */
+export const buttonSchema = z.object({
+  id: itemIdSchema,
+  label: text(40),
+  href: hrefSchema.default(''),
+  style: z.enum(BUTTON_STYLES).default('theme'),
+  size: z.enum(BUTTON_SIZES).default('medium'),
+  icon: iconSlot('arrowRight'),
+  /** Open the link in a new tab. */
+  newTab: z.boolean().default(false),
+});
+export type Button = z.infer<typeof buttonSchema>;
+export const buttonsSchema = z.array(buttonSchema).max(6).default([]);
+
+/** Where buttons sit in their row. */
+export const ALIGNMENTS = ['left', 'center', 'right'] as const;
+
+/** A section's own background (empty = the theme's). The image is shown whole or tiled, never stretched. */
+export const BACKGROUND_FITS = ['cover', 'contain', 'repeat'] as const;
+export const sectionBackgroundSchema = z.object({
+  color: optionalColor,
+  image: imageSchema.default({}),
+  fit: z.enum(BACKGROUND_FITS).default('cover'),
+});
+export type SectionBackground = z.infer<typeof sectionBackgroundSchema>;

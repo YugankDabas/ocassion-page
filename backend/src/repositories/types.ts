@@ -270,6 +270,8 @@ export interface MediaRecord {
 export interface IMediaRepository {
   list(opts: { page: number; pageSize: number; search?: string }): Promise<Paginated<MediaRecord>>;
   findById(id: string): Promise<MediaRecord | null>;
+  /** The real size of library images, by address. */
+  findSizesByUrls(urls: string[]): Promise<Pick<MediaRecord, 'url' | 'width' | 'height'>[]>;
   create(data: Omit<MediaRecord, 'id' | 'createdAt'> & { uploadedById: string }): Promise<MediaRecord>;
   updateAlt(id: string, alt: string): Promise<MediaRecord>;
   delete(id: string): Promise<void>;

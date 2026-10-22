@@ -61,7 +61,7 @@ export class TemplateFactory implements ITemplateFactory {
               eyebrow: `Celebrate ${o.shortName} with the perfect gift`,
               heading: 'Digital Gift Cards',
               subheading: 'Up to 30% savings on 300+ top brand gift cards. Instant delivery on WhatsApp & email.',
-              ctaLabel: 'Explore gift cards',
+              buttons: [{ id: itemId('b_'), label: 'Explore gift cards', href: '#brands', style: 'theme' }],
               artwork: 'auto',
               artImage: { url: '', alt: '' },
               sideImage: { url: '', alt: '' },

@@ -1,7 +1,8 @@
 /**
  * The script shipped inside an exported page. Plain browser JavaScript (no
  * framework) that restores the interactive parts on the static markup: banner
- * slider, brand search / discount filters / "view more", tabs and "read more".
+ * slider, brand search / discount filters / "view more", tabs, "read more", and brand logos that fail to load
+ * (the card shows the brand's initials instead of a broken image).
  * Everything is visible and usable without it; it only enhances.
  *
  * It initialises itself when the HTML is parsed. A host page that inserts the
@@ -79,6 +80,31 @@ const SOURCE = `(function () {
         if (trackEl) trackEl.scrollBy({ left: (btn.classList.contains(P + 'prev') ? -1 : 1) * trackEl.clientWidth * 0.85, behavior: 'smooth' });
       });
     });
+    if (trackEl) arrows(trackEl, one('.carousel-btn.prev', root), one('.carousel-btn.next', root));
+  }
+
+  function arrows(track, prevBtn, nextBtn) {
+    function update() {
+      var room = track.scrollWidth - track.clientWidth, edge = 10;
+      if (prevBtn) prevBtn.hidden = room <= edge || track.scrollLeft <= edge;
+      if (nextBtn) nextBtn.hidden = room <= edge || track.scrollLeft >= room - edge;
+    }
+    track.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    if (window.ResizeObserver) new ResizeObserver(update).observe(track);
+    update();
+  }
+
+  function logos(root) {
+    all('.gift-logo img', root).filter(fresh).forEach(function (img) {
+      function failed() {
+        var face = img.closest('.' + P + 'gift-face');
+        if (face) { face.classList.remove(P + 'has-logo'); face.classList.add(P + 'logo-failed'); }
+        if (img.parentNode) img.parentNode.removeChild(img);
+      }
+      if (img.complete && img.naturalWidth === 0 && img.getAttribute('src')) failed();
+      else img.addEventListener('error', failed);
+    });
   }
 
   function tabs(root) {
@@ -132,6 +158,7 @@ const SOURCE = `(function () {
     all('.occasion', root).filter(fresh).forEach(sectionLinks);
     all('.hero-carousel', root).filter(fresh).forEach(slider);
     all('.brand-collection', root).filter(fresh).forEach(brandList);
+    logos(root);
     all('.brand-tabs', root).filter(fresh).forEach(tabs);
     all('.collapsible', root).filter(fresh).forEach(readMore);
   }

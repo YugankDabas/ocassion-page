@@ -126,6 +126,11 @@ export class PrismaMediaRepository implements IMediaRepository {
     return this.db.media.findUnique({ where: { id } });
   }
 
+  findSizesByUrls(urls: string[]): Promise<Pick<MediaRecord, 'url' | 'width' | 'height'>[]> {
+    if (!urls.length) return Promise.resolve([]);
+    return this.db.media.findMany({ where: { url: { in: urls } }, select: { url: true, width: true, height: true } });
+  }
+
   create(data: Omit<MediaRecord, 'id' | 'createdAt'> & { uploadedById: string }): Promise<MediaRecord> {
     return this.db.media.create({ data });
   }

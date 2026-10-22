@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { Theme } from '../contracts';
+import { cssUrl } from './cssUrl';
 
 const RADIUS: Record<Theme['corners'], string> = { sharp: '4px', soft: '12px', round: '22px' };
 const HEADING_FONT: Record<Theme['headingFont'], string> = {
@@ -21,5 +22,13 @@ export function themeStyle(theme: Theme): CSSProperties {
     '--c-muted': theme.mutedText,
     '--radius': RADIUS[theme.corners],
     '--font-heading': HEADING_FONT[theme.headingFont],
+    ...(theme.backgroundImage.url
+      ? {
+          backgroundImage: `url(${cssUrl(theme.backgroundImage.url)})`,
+          backgroundPosition: 'center top',
+          backgroundRepeat: theme.backgroundFit === 'repeat' ? 'repeat' : 'no-repeat',
+          ...(theme.backgroundFit === 'repeat' ? {} : { backgroundSize: theme.backgroundFit }),
+        }
+      : {}),
   } as CSSProperties;
 }

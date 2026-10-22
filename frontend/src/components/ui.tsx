@@ -229,13 +229,52 @@ export function Toggle({ label, checked, onChange, hint }: { label: string; chec
   );
 }
 
+/**
+ * What a typed-in field shows, kept apart from its value: a half-typed entry is never taken, and the text is never
+ * replaced while the field has focus (replacing it mid-typing would move the cursor and drop keys). Leaving the
+ * field shows the value taken.
+ */
+export function useDraftText(value: string) {
+  const [text, setText] = useState(value);
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setText(value);
+  }, [value]);
+  const bind = {
+    onFocus: () => {
+      focused.current = true;
+    },
+    onBlur: () => {
+      focused.current = false;
+      setText(value);
+    },
+  };
+  return { text, setText, bind };
+}
+
+/** A required colour. Only a whole colour code is taken ("8b1e2d" gets its #), so a half-typed code never reaches the page. */
 export function ColorInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   const id = useId();
+  const { text, setText, bind } = useDraftText(value);
+  const hex = text && !text.startsWith('#') ? `#${text}` : text;
+  const valid = /^#(?:[0-9a-fA-F]{3}){1,2}$/.test(hex);
   return (
-    <Field label={label} htmlFor={id}>
+    <Field label={label} htmlFor={id} error={valid ? undefined : 'Use a colour code like #8B1E2D'}>
       <div className="color-input">
         <input type="color" aria-label={`${label} picker`} value={value.length === 7 ? value : '#000000'} onChange={(e) => onChange(e.target.value)} />
-        <input id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)} maxLength={7} />
+        <input
+          id={id}
+          className="input"
+          value={text}
+          maxLength={7}
+          onChange={(e) => {
+            const typed = e.target.value.trim();
+            setText(typed);
+            const next = typed && !typed.startsWith('#') ? `#${typed}` : typed;
+            if (/^#(?:[0-9a-fA-F]{3}){1,2}$/.test(next)) onChange(next);
+          }}
+          {...bind}
+        />
       </div>
     </Field>
   );

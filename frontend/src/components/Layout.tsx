@@ -6,15 +6,15 @@ import { useAuth } from '../lib/auth';
 import { useBrandSync } from '../lib/queries';
 import { Spinner } from './ui';
 
-const NAV: { to: string; label: string; icon: string; permission?: Permission; section?: string }[] = [
-  { to: '/pages', label: 'Pages', icon: '📄', section: 'Content' },
-  { to: '/brands', label: 'Brands', icon: '🏷️' },
-  { to: '/media', label: 'Media library', icon: '🖼️' },
-  { to: '/templates', label: 'Templates', icon: '🧩' },
-  { to: '/occasions', label: 'Occasions', icon: '🎉', section: 'Configuration' },
-  { to: '/settings', label: 'Header & footer', icon: '⚙️' },
-  { to: '/users', label: 'Users', icon: '👥', permission: 'users.manage', section: 'Administration' },
-  { to: '/audit', label: 'Audit log', icon: '🧾', permission: 'audit.read' },
+const NAV: { to: string; label: string; permission?: Permission; section?: string }[] = [
+  { to: '/pages', label: 'Pages', section: 'Content' },
+  { to: '/brands', label: 'Brands' },
+  { to: '/media', label: 'Media library' },
+  { to: '/templates', label: 'Templates' },
+  { to: '/occasions', label: 'Occasions', section: 'Configuration' },
+  { to: '/settings', label: 'Header & footer' },
+  { to: '/users', label: 'Users', permission: 'users.manage', section: 'Administration' },
+  { to: '/audit', label: 'Audit log', permission: 'audit.read' },
 ];
 
 export function ProtectedLayout() {
@@ -40,7 +40,7 @@ export function ProtectedLayout() {
             <div key={n.to}>
               {n.section && <div className="nav-section">{n.section}</div>}
               <NavLink to={n.to}>
-                <span aria-hidden>{n.icon}</span> {n.label}
+                {n.label}
               </NavLink>
             </div>
           ))}

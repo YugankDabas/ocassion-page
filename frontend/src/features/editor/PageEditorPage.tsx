@@ -3,7 +3,8 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { Link, useBlocker, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { pageContentSchema, type PageContent, type Section, type SectionType } from '../../contracts';
-import { Badge, Button, ConfirmDialog, EmptyState, Modal, NumberInput, Spinner, TextArea, TextInput, Toggle } from '../../components/ui';
+import { ImageField } from '../../components/fields/ImageField';
+import { Badge, Button, ConfirmDialog, EmptyState, Modal, NumberInput, Select, Spinner, TextArea, TextInput, Toggle } from '../../components/ui';
 import { API_BASE, ApiError, api, errorMessage } from '../../lib/api';
 import { IS_LOCAL } from '../../lib/environment';
 import { websiteUrl } from '../../lib/website';
@@ -17,6 +18,7 @@ import { PreviewPane } from './PreviewPane';
 import { RevisionsModal } from './RevisionsModal';
 import { AddSectionModal, SectionList } from './SectionList';
 import { createSection, sectionDefinition, sectionHeading, sectionTitle } from './sections/catalog';
+import { ColorPick, type HeadingTag } from './sections/fields';
 
 interface Doc {
   title: string;
@@ -491,8 +493,10 @@ function SectionEditorPanel({
   onDelete: () => void;
 }) {
   const def = sectionDefinition(section.type);
-  const Editor = def.Editor as unknown as React.ComponentType<{ props: unknown; onChange: (patch: object) => void }>;
+  const Editor = def.Editor as unknown as React.ComponentType<{ props: unknown; onChange: (patch: object) => void; tag: HeadingTag }>;
   const layout = section.layout ?? {};
+  const setBackground = (patch: Partial<NonNullable<Section['background']>>) =>
+    onPatch({ background: { color: '', image: { url: '', alt: '' }, fit: 'cover', ...section.background, ...patch } });
   const defaults = defaultSpacing(section.type);
   const setSpace = (key: SpaceKey, value: number | null) =>
     onPatch({ layout: { ...layout, [key]: value === null ? null : Math.max(0, Math.min(400, Math.round(value))) } });
@@ -512,7 +516,7 @@ function SectionEditorPanel({
     <div className="stack">
       <div className="row-between">
         <h2>
-          {def.icon} {sectionTitle(section)}
+          {sectionTitle(section)}
           {sectionTitle(section) !== def.label && <span className="muted small"> · {def.label}</span>}
         </h2>
         <div className="row">
@@ -525,7 +529,18 @@ function SectionEditorPanel({
         </div>
       </div>
       <Collapsible id="content" title="Content" defaultOpen>
-        <Editor key={section.id} props={section.props} onChange={(patch) => onPatch({ props: { ...section.props, ...patch } } as Partial<Section>)} />
+        <Editor
+          key={section.id}
+          props={section.props}
+          onChange={(patch) => onPatch({ props: { ...section.props, ...patch } } as Partial<Section>)}
+          tag={{
+            isHero: section.type === 'hero',
+            level: section.headingLevel,
+            setLevel: (headingLevel) => onPatch({ headingLevel }),
+            itemLevel: section.itemHeadingLevel,
+            setItemLevel: (itemHeadingLevel) => onPatch({ itemHeadingLevel }),
+          }}
+        />
       </Collapsible>
       <Collapsible id="options" title="Section options">
         <Toggle label="Visible on page" checked={section.visible} onChange={(visible) => onPatch({ visible })} />
@@ -545,6 +560,37 @@ function SectionEditorPanel({
           hint={section.anchor ? `Link to this section with #${section.anchor}` : 'Optional. Lets buttons and links jump to this section.'}
           onChange={(anchor) => onPatch({ anchor: anchor.toLowerCase().replace(/[^a-z0-9-]/g, '-') })}
         />
+      </Collapsible>
+      <Collapsible id="background" title="Background">
+        <p className="field-hint" style={{ margin: 0 }}>
+          This section&apos;s own background. Empty: the page background (Page settings → Theme).
+        </p>
+        <ColorPick label="Colour" showLabel value={section.background?.color ?? ''} onChange={(color) => setBackground({ color })} />
+        <ImageField
+          label="Image (optional)"
+          hint="Shown behind the section. Wide images (e.g. 1920×600 px) suit most sections."
+          value={section.background?.image ?? { url: '', alt: '' }}
+          onChange={(image) => setBackground({ image })}
+        />
+        {section.background?.image.url && (
+          <Select
+            label="Image fit"
+            value={section.background.fit}
+            onChange={(fit) => setBackground({ fit })}
+            options={[
+              { value: 'cover', label: 'Fill the section (edges may be hidden)' },
+              { value: 'contain', label: 'Show the whole image' },
+              { value: 'repeat', label: 'Repeat as a pattern' },
+            ]}
+          />
+        )}
+        {section.background && (
+          <div>
+            <Button size="sm" variant="ghost" onClick={() => onPatch({ background: undefined })}>
+              Remove background
+            </Button>
+          </div>
+        )}
       </Collapsible>
       <Collapsible id="spacing" title="Spacing">
         <p className="field-hint" style={{ margin: 0 }}>
